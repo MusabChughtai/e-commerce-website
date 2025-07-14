@@ -144,9 +144,10 @@ export default function EastCraftsWebsite() {
     return cartItems.reduce((total, item) => total + item.quantity, 0)
   }
 
-  const formatPrice = (price: number) => {
-    return `PKR ${price.toLocaleString()}`
-  }
+  const formatPrice = (price: number | undefined | null) => {
+  const safePrice = price || 0;
+  return `PKR ${safePrice.toLocaleString()}`;
+}
 
   // Convert Product to legacy format for compatibility
   const convertToLegacyProduct = (product: Product) => ({
