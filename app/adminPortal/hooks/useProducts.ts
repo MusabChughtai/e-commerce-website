@@ -183,149 +183,175 @@ export function useProducts() {
     await supabase.storage.from("product-images").remove(fileKeys);
   }
 
-  async function addProduct(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
+async function addProduct(e: React.FormEvent) {
+  e.preventDefault();
+  setLoading(true);
 
-    const { name, description, category_id, dimensions, polish_color_ids, variants, images } = formData;
+  const { name, description, category_id, dimensions, polish_color_ids, variants, images } = formData;
 
-    // Insert Product
-    const { data: product, error: productError } = await supabase
-      .from("products")
-      .insert([{ name, description, category_id }])
-      .select()
-      .single();
+  // Insert Product
+  const { data: product, error: productError } = await supabase
+    .from("products")
+    .insert([{ name, description, category_id }])
+    .select()
+    .single();
 
-    if (productError) {
-      console.error(productError);
-      setLoading(false);
-      return;
-    }
-
-    const productId = product.id;
-
-    // Insert Dimensions
-    const dimensionsToInsert = dimensions.map((d: any) => ({
-      product_id: productId,
-      name: d.name,
-      width: d.width,
-      height: d.height,
-      depth: d.depth,
-      price: d.price,
-    }));
-    await supabase.from("dimensions").insert(dimensionsToInsert);
-
-    // Link Polish Colors
-    const polishLinks = polish_color_ids.map((pid: string) => ({
-      product_id: productId,
-      polish_color_id: pid,
-    }));
-    await supabase.from("product_polish_colors").insert(polishLinks);
-
-    // Insert Variant Options
-    const variantsToInsert = variants.map((v: any) => {
-  // Find the actual dimension UUID by index
-  const dimensionIndex = parseInt(v.dimensionId);
-  const dimensionUuid = dimensionsToInsert[dimensionIndex]?.id; // You'll need to get this from the inserted dimensions
-  
-  return {
-    product_id: productId, // or editingProduct.id
-    dimension_id: dimensionUuid,
-    polish_color_id: v.polishColorId,
-    stock_quantity: parseInt(v.stock),
-  };
-});
-    await supabase.from("variant_options").insert(variantsToInsert);
-
-    // Upload Images
-    for (const polishColorId of polish_color_ids) {
-      const files = images[polishColorId] || [];
-      const uploaded = await uploadImages(productId, polishColorId, files);
-      if (uploaded.length > 0) {
-        await supabase.from("product_images").insert(uploaded);
-      }
-    }
-
-    await fetchProducts();
-    resetForm();
-    setShowSuccessModal(true);
+  if (productError) {
+    console.error(productError);
     setLoading(false);
+    return;
   }
 
-  async function updateProduct(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingProduct) return;
-    setLoading(true);
+  const productId = product.id;
 
-    const { name, description, category_id, dimensions, polish_color_ids, variants, images } = formData;
-
-    await supabase
-      .from("products")
-      .update({ name, description, category_id })
-      .eq("id", editingProduct.id);
-
-    await supabase.from("dimensions").delete().eq("product_id", editingProduct.id);
-    const dimsToInsert = dimensions.map((d: any) => ({
-      product_id: editingProduct.id,
-      name: d.name,
-      width: d.width,
-      height: d.height,
-      depth: d.depth,
-      price: d.price,
-    }));
-    await supabase.from("dimensions").insert(dimsToInsert);
-
-    await supabase
-      .from("product_polish_colors")
-      .delete()
-      .eq("product_id", editingProduct.id);
-    const polishLinks = polish_color_ids.map((pid: string) => ({
-      product_id: editingProduct.id,
-      polish_color_id: pid,
-    }));
-    await supabase.from("product_polish_colors").insert(polishLinks);
-
-    await supabase
-      .from("variant_options")
-      .delete()
-      .eq("product_id", editingProduct.id);
-    const variantsToInsert = variants.map((v: any) => {
-  // Find the actual dimension UUID by index
-  const dimensionIndex = parseInt(v.dimensionId);
-  const dimensionUuid = dimsToInsert[dimensionIndex]?.id; // You'll need to get this from the inserted dimensions
+  // Insert Dimensions and get the inserted records with IDs
+  const dimensionsToInsert = dimensions.map((d: any) => ({
+    product_id: productId,
+    name: d.name,
+    width: d.width,
+    height: d.height,
+    depth: d.depth,
+    price: d.price,
+  }));
   
-  return {
-    product_id: editingProduct.id, // or editingProduct.id
-    dimension_id: dimensionUuid,
-    polish_color_id: v.polishColorId,
-    stock_quantity: parseInt(v.stock),
-  };
-});
-    await supabase.from("variant_options").insert(variantsToInsert);
+  const { data: insertedDimensions, error: dimensionError } = await supabase
+    .from("dimensions")
+    .insert(dimensionsToInsert)
+    .select();
 
-    // Images: delete old from storage & DB, upload new
-    const { data: oldImgs } = await supabase
-      .from("product_images")
-      .select("image_url")
-      .eq("product_id", editingProduct.id);
-
-    const oldKeys = oldImgs?.map((i) => i.image_url) || [];
-    await deleteImagesFromStorage(oldKeys);
-    await supabase.from("product_images").delete().eq("product_id", editingProduct.id);
-
-    for (const polishColorId of polish_color_ids) {
-      const files = images[polishColorId] || [];
-      const uploaded = await uploadImages(editingProduct.id, polishColorId, files);
-      if (uploaded.length > 0) {
-        await supabase.from("product_images").insert(uploaded);
-      }
-    }
-
-    await fetchProducts();
-    resetForm();
-    setShowSuccessModal(true);
+  if (dimensionError) {
+    console.error(dimensionError);
     setLoading(false);
+    return;
   }
+
+  // Link Polish Colors
+  const polishLinks = polish_color_ids.map((pid: string) => ({
+    product_id: productId,
+    polish_color_id: pid,
+  }));
+  await supabase.from("product_polish_colors").insert(polishLinks);
+
+  // Insert Variant Options with correct dimension IDs
+  const variantsToInsert = variants.map((v: any) => {
+    // Find the actual dimension UUID by index from inserted dimensions
+    const dimensionIndex = parseInt(v.dimensionId);
+    const dimensionUuid = insertedDimensions[dimensionIndex]?.id;
+    
+    return {
+      product_id: productId,
+      dimension_id: dimensionUuid,
+      polish_color_id: v.polishColorId,
+      stock_quantity: parseInt(v.stock),
+    };
+  });
+  
+  await supabase.from("variant_options").insert(variantsToInsert);
+
+  // Upload Images
+  for (const polishColorId of polish_color_ids) {
+    const files = images[polishColorId] || [];
+    const uploaded = await uploadImages(productId, polishColorId, files);
+    if (uploaded.length > 0) {
+      await supabase.from("product_images").insert(uploaded);
+    }
+  }
+
+  await fetchProducts();
+  resetForm();
+  setShowSuccessModal(true);
+  setLoading(false);
+}
+
+async function updateProduct(e: React.FormEvent) {
+  e.preventDefault();
+  if (!editingProduct) return;
+  setLoading(true);
+
+  const { name, description, category_id, dimensions, polish_color_ids, variants, images } = formData;
+
+  await supabase
+    .from("products")
+    .update({ name, description, category_id })
+    .eq("id", editingProduct.id);
+
+  // Delete old dimensions and insert new ones
+  await supabase.from("dimensions").delete().eq("product_id", editingProduct.id);
+  
+  const dimsToInsert = dimensions.map((d: any) => ({
+    product_id: editingProduct.id,
+    name: d.name,
+    width: d.width,
+    height: d.height,
+    depth: d.depth,
+    price: d.price,
+  }));
+  
+  const { data: insertedDimensions, error: dimensionError } = await supabase
+    .from("dimensions")
+    .insert(dimsToInsert)
+    .select();
+
+  if (dimensionError) {
+    console.error(dimensionError);
+    setLoading(false);
+    return;
+  }
+
+  await supabase
+    .from("product_polish_colors")
+    .delete()
+    .eq("product_id", editingProduct.id);
+  
+  const polishLinks = polish_color_ids.map((pid: string) => ({
+    product_id: editingProduct.id,
+    polish_color_id: pid,
+  }));
+  await supabase.from("product_polish_colors").insert(polishLinks);
+
+  await supabase
+    .from("variant_options")
+    .delete()
+    .eq("product_id", editingProduct.id);
+  
+  const variantsToInsert = variants.map((v: any) => {
+    // Find the actual dimension UUID by index from inserted dimensions
+    const dimensionIndex = parseInt(v.dimensionId);
+    const dimensionUuid = insertedDimensions[dimensionIndex]?.id;
+    
+    return {
+      product_id: editingProduct.id,
+      dimension_id: dimensionUuid,
+      polish_color_id: v.polishColorId,
+      stock_quantity: parseInt(v.stock),
+    };
+  });
+  
+  await supabase.from("variant_options").insert(variantsToInsert);
+
+  // Images: delete old from storage & DB, upload new
+  const { data: oldImgs } = await supabase
+    .from("product_images")
+    .select("image_url")
+    .eq("product_id", editingProduct.id);
+
+  const oldKeys = oldImgs?.map((i) => i.image_url) || [];
+  await deleteImagesFromStorage(oldKeys);
+  await supabase.from("product_images").delete().eq("product_id", editingProduct.id);
+
+  for (const polishColorId of polish_color_ids) {
+    const files = images[polishColorId] || [];
+    const uploaded = await uploadImages(editingProduct.id, polishColorId, files);
+    if (uploaded.length > 0) {
+      await supabase.from("product_images").insert(uploaded);
+    }
+  }
+
+  await fetchProducts();
+  resetForm();
+  setShowSuccessModal(true);
+  setLoading(false);
+}
 
   async function deleteProduct(id: string) {
     setLoading(true);
