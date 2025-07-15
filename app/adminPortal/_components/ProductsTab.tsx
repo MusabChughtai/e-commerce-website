@@ -1,31 +1,45 @@
 "use client";
 
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Edit, Trash2, Package, Palette } from "lucide-react";
+import { Search, Edit, Trash2, Package, Palette, Plus } from "lucide-react";
 import Image from "next/image";
+import { AddEditProductForm } from "./AddEditProductForm";
 
 interface ProductsTabProps {
   products: any[];
   loading: boolean;
-  searchTerm: string;
-  setSearchTerm: (val: string) => void;
-  startEdit: (product: any) => void;
+  editingProduct: any;
+  formData: any;
+  setFormData: (data: any) => void;
+  addProduct: (e: React.FormEvent) => void;
+  updateProduct: (e: React.FormEvent) => void;
   deleteProduct: (id: string) => void;
+  startEdit: (product: any) => void;
+  cancelEdit: () => void;
   formatPrice: (price: number) => string;
 }
 
 export function ProductsTab({
   products,
   loading,
-  searchTerm,
-  setSearchTerm,
-  startEdit,
+  editingProduct,
+  formData,
+  setFormData,
+  addProduct,
+  updateProduct,
   deleteProduct,
+  startEdit,
+  cancelEdit,
   formatPrice,
 }: ProductsTabProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
   const filteredProducts = products.filter(
     (p) =>
       p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -103,12 +117,56 @@ export function ProductsTab({
     }));
   };
 
+  const handleAddProduct = () => {
+    setShowAddForm(true);
+  };
+
+  const handleEditProduct = (product: any) => {
+    startEdit(product);
+    setShowAddForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    cancelEdit();
+    setShowAddForm(false);
+  };
+
+  const handleAddProductSubmit = (e: React.FormEvent) => {
+    addProduct(e);
+    setShowSuccessModal(true);
+    setShowAddForm(false);
+  };
+
+  const handleUpdateProductSubmit = (e: React.FormEvent) => {
+    updateProduct(e);
+    setShowSuccessModal(true);
+    setShowAddForm(false);
+  };
+
+  // Show form if we're adding or editing
+  if (showAddForm || editingProduct) {
+    return (
+      <div className="space-y-6">
+        <AddEditProductForm
+          formData={formData}
+          setFormData={setFormData}
+          editingProduct={editingProduct}
+          addProduct={handleAddProductSubmit}
+          updateProduct={handleUpdateProductSubmit}
+          cancelEdit={handleCancelEdit}
+          showSuccessModal={showSuccessModal}
+          setShowSuccessModal={setShowSuccessModal}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Search bar */}
+      {/* Search bar and Add button */}
       <Card>
         <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
@@ -118,9 +176,18 @@ export function ProductsTab({
                 className="pl-10"
               />
             </div>
-            <Badge variant="secondary">
-              {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
-            </Badge>
+            <div className="flex items-center gap-4">
+              <Badge variant="secondary">
+                {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+              </Badge>
+              <Button
+                onClick={handleAddProduct}
+                className="bg-gradient-to-r from-[#23423d] to-[#2a4f49] hover:from-[#1f3a36] hover:to-[#25463f] text-white flex items-center space-x-2"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Product</span>
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -184,16 +251,16 @@ export function ProductsTab({
                   <div className="flex items-center gap-2 mb-3">
                     <Palette className="h-4 w-4 text-gray-500" />
                     <div className="flex flex-wrap gap-1">
-                      {product.available_colors.slice(0, 4).map((color: any) => (
+                      {product.available_colors.slice(0, 4).map((color: any, index: number) => (
                         <div
-                          key={color.id}
+                          key={color.id || `color-${product.id}-${index}`}
                           className="w-5 h-5 rounded-full border border-gray-300 flex-shrink-0"
                           style={{ backgroundColor: color.hex_code || '#ccc' }}
                           title={color.name}
                         />
                       ))}
                       {product.available_colors.length > 4 && (
-                        <div className="text-xs text-gray-500 ml-1">
+                        <div key={`more-colors-${product.id}`} className="text-xs text-gray-500 ml-1">
                           +{product.available_colors.length - 4} more
                         </div>
                       )}
@@ -204,7 +271,12 @@ export function ProductsTab({
                 {/* Sizes */}
                 {getAvailableSizes(product).length > 0 && (
                   <div className="text-xs text-gray-500 mb-2">
-                    Sizes: {getAvailableSizes(product).map((size: any) => size.name).join(", ")}
+                    Sizes: {getAvailableSizes(product).map((size: any, index: number) => (
+                      <span key={`${product.id}-size-${size.id || index}`}>
+                        {size.name}
+                        {index < getAvailableSizes(product).length - 1 ? ', ' : ''}
+                      </span>
+                    ))}
                   </div>
                 )}
 
@@ -227,7 +299,7 @@ export function ProductsTab({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => startEdit(product)}
+                      onClick={() => handleEditProduct(product)}
                     >
                       <Edit className="h-4 w-4" />
                     </Button>

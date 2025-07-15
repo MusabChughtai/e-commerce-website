@@ -1,31 +1,126 @@
--- Create products table
-CREATE TABLE IF NOT EXISTS products (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  description TEXT,
-  price INTEGER NOT NULL,
-  image TEXT,
-  full_description TEXT,
-  dimensions VARCHAR(255),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- ==========================================
+-- 1️⃣ Categories
+-- ==========================================
+CREATE TABLE categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT
 );
 
--- Create updated_at trigger
-CREATE OR REPLACE FUNCTION update_updated_at_column()
+-- ==========================================
+-- 2️⃣ Products
+-- ==========================================
+CREATE TABLE products (
+  id TEXT PRIMARY KEY,  -- stays TEXT!
+  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  description TEXT
+);
+
+-- ==========================================
+-- 3️⃣ Polish Colors
+-- ==========================================
+CREATE TABLE polish_colors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  hex_code TEXT, -- optional, for UI color swatches
+  description TEXT
+);
+
+-- ==========================================
+-- 4️⃣ Product Polish Colors (M:N)
+-- ==========================================
+CREATE TABLE product_polish_colors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id TEXT REFERENCES products(id) ON DELETE CASCADE, -- ✅ FIXED TO TEXT
+  polish_color_id UUID REFERENCES polish_colors(id) ON DELETE CASCADE,
+  UNIQUE (product_id, polish_color_id)
+);
+
+-- ==========================================
+-- 5️⃣ Dimensions (Variants by Size)
+-- ==========================================
+CREATE TABLE dimensions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id TEXT REFERENCES products(id) ON DELETE CASCADE, -- ✅ FIXED TO TEXT
+  name TEXT, -- optional e.g. "4x6"
+  width NUMERIC NOT NULL,
+  height NUMERIC NOT NULL,
+  depth NUMERIC,
+  price NUMERIC NOT NULL CHECK (price >= 0),
+  UNIQUE (product_id, width, height, depth)
+);
+
+-- ==========================================
+-- 6️⃣ Variant Options (SKU)
+-- ==========================================
+CREATE TABLE variant_options (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id TEXT REFERENCES products(id) ON DELETE CASCADE, -- ✅ FIXED TO TEXT
+  dimension_id UUID REFERENCES dimensions(id) ON DELETE CASCADE,
+  polish_color_id UUID REFERENCES polish_colors(id) ON DELETE CASCADE,
+  stock_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
+  UNIQUE (product_id, dimension_id, polish_color_id)
+);
+
+-- ==========================================
+-- 7️⃣ Product Images
+-- ==========================================
+CREATE TABLE product_images (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id TEXT REFERENCES products(id) ON DELETE CASCADE, -- ✅ FIXED TO TEXT
+  polish_color_id UUID REFERENCES polish_colors(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL CHECK (image_url <> ''),
+  is_primary BOOLEAN DEFAULT FALSE,
+  UNIQUE (product_id, polish_color_id, image_url)
+);
+
+-- ==========================================
+-- ⚡ Trigger: Ensure only ONE primary image per Product + Polish Color
+-- ==========================================
+CREATE OR REPLACE FUNCTION enforce_one_primary_image()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
+  IF NEW.is_primary THEN
+    UPDATE product_images
+    SET is_primary = FALSE
+    WHERE product_id = NEW.product_id
+      AND polish_color_id = NEW.polish_color_id
+      AND id <> NEW.id;
+  END IF;
+  RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$ LANGUAGE plpgsql;
 
-CREATE TRIGGER update_products_updated_at BEFORE UPDATE
-    ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_enforce_one_primary_image
+BEFORE INSERT OR UPDATE ON product_images
+FOR EACH ROW EXECUTE FUNCTION enforce_one_primary_image();
 
--- Insert sample data
-INSERT INTO products (name, description, price, image, full_description, dimensions) VALUES
-('Velvet Armchair', 'Comfortable and stylish seating solution', 124999, '/placeholder.svg?height=200&width=200', 'Experience unparalleled comfort and timeless style with our Velvet Armchair. Crafted with a solid oak frame and upholstered in premium, soft velvet that offers both luxury and durability.', 'Height: 85cm, Width: 65cm, Depth: 70cm'),
-('Oakwood Lamp', 'Brighten your space with style', 32499, '/placeholder.svg?height=200&width=200', 'Illuminate your space with our handcrafted Oakwood Lamp. Made from sustainably sourced oak with a warm LED bulb for perfect ambient lighting.', 'Height: 45cm, Base: 15cm diameter'),
-('Linen Sofa', 'Luxury and elegant seating for your living room', 324999, '/placeholder.svg?height=200&width=200', 'Our premium Linen Sofa combines comfort with sophisticated design. Features high-quality linen upholstery and solid hardwood frame.', 'Height: 80cm, Width: 200cm, Depth: 90cm'),
-('Dining Set', 'Perfect for beautiful dining experiences', 224999, '/placeholder.svg?height=200&width=200', 'Complete dining set including table and four chairs. Crafted from solid wood with a beautiful natural finish.', 'Table: 150cm x 90cm, Chair height: 85cm');
+-- ==========================================
+-- 🔑 Recommended Indexes
+-- ==========================================
+CREATE INDEX idx_products_category_id ON products(category_id);
+CREATE INDEX idx_product_images_product_polish ON product_images(product_id, polish_color_id);
+CREATE INDEX idx_variant_options_product_dim_polish ON variant_options(product_id, dimension_id, polish_color_id);
+
+-- ==========================================
+-- 📌 Auto-increment Product ID prefix: 'p_0001'
+-- ==========================================
+CREATE SEQUENCE IF NOT EXISTS product_id_seq START 1;
+
+CREATE OR REPLACE FUNCTION set_product_id()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.id IS NULL THEN
+    NEW.id := 'p_' || LPAD(nextval('product_id_seq')::TEXT, 4, '0');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS before_insert_product_id ON products;
+
+CREATE TRIGGER before_insert_product_id
+BEFORE INSERT ON products
+FOR EACH ROW
+EXECUTE FUNCTION set_product_id();
