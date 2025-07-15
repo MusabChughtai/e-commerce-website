@@ -3,162 +3,196 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  category_id: string;
+  dimensions: any[];
+  polish_colors: any[];
+  variant_options: any[];
+  product_images: any[];
+  product_polish_colors: any[]; // Added to fix the error
+}
+
 export function useProducts() {
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<any>({
     name: "",
     description: "",
-    full_description: "",
-    base_price: "",
-    polish_color: "",
-    discount: "",
-    variants: [
-      {
-        dimension: "",
-        price: "",
-      },
-    ],
-    images: [], // Will store File objects and existing image data
+    category_id: "",
+    dimensions: [],
+    polish_color_ids: [],
+    variants: [],
+    images: {}, // { [polishColorId]: File[] }
   });
 
   useEffect(() => {
     fetchProducts();
   }, []);
 
-  // ✅ Clean fetchProducts version
-  // ✅ FINAL fetchProducts — robust version
   async function fetchProducts() {
-    setLoading(true);
-
-    try {
-      const { data, error } = await supabase.from("products").select(`
+  setLoading(true);
+  
+  const { data, error } = await supabase
+    .from("products")
+    .select(`
       *,
-      product_variants (*),
-      product_images (*)
-    `);
+      categories (
+        id,
+        name,
+        description
+      ),
+      dimensions (
+        id,
+        name,
+        width,
+        height,
+        depth,
+        price
+      ),
+      product_polish_colors (
+        id,
+        polish_colors (
+          id,
+          name,
+          hex_code,
+          description
+        )
+      ),
+      variant_options (
+        id,
+        dimension_id,
+        polish_color_id,
+        stock_quantity,
+        dimensions (
+          id,
+          name,
+          width,
+          height,
+          depth,
+          price
+        ),
+        polish_colors (
+          id,
+          name,
+          hex_code,
+          description
+        )
+      ),
+      product_images (
+        id,
+        polish_color_id,
+        image_url,
+        is_primary,
+        polish_colors (
+          id,
+          name,
+          hex_code
+        )
+      )
+    `)
+    .order('name');
 
-      if (error) {
-        console.error("Error fetching products:", error);
-        setLoading(false);
-        return;
-      }
-
-      const productsWithImages = data?.map((product) => {
-        if (product.product_images && product.product_images.length > 0) {
-          const imagesWithUrls = product.product_images.map((img: any) => {
-            let publicUrl = img.image_url;
-
-            // ✅ If it’s NOT already a full URL, then build one
-            if (!img.image_url.startsWith("http")) {
-              const { data: urlData } = supabase.storage
-                .from("product-images")
-                .getPublicUrl(img.image_url);
-              publicUrl = urlData?.publicUrl || "/placeholder.svg";
-            }
-
-            return {
-              ...img,
-              image_url: publicUrl,
-            };
-          });
-
-          return {
-            ...product,
-            product_images: imagesWithUrls,
-          };
-        }
-        return product;
-      });
-
-      console.log("Products with images:", productsWithImages);
-      setProducts(productsWithImages || []);
-      setLoading(false);
-    } catch (error) {
-      console.error("Unexpected error:", error);
-      setLoading(false);
-    }
+  if (error) {
+    console.error('Error fetching products:', error);
+    setLoading(false);
+    return;
   }
 
+  // Transform data to match component expectations
+  const transformedProducts = data?.map((product) => {
+    // Get public URLs for images
+    const transformedImages = product.product_images?.map((img:any) => {
+      const { data: urlData } = supabase.storage
+        .from("product-images")
+        .getPublicUrl(img.image_url);
+      
+      return {
+        ...img,
+        public_url: urlData?.publicUrl || img.image_url
+      };
+    }) || [];
 
+    // Transform variant options to include full dimension and color info
+    const transformedVariants = product.variant_options?.map((variant:any) => ({
+      id: variant.id,
+      dimension_id: variant.dimension_id,
+      polish_color_id: variant.polish_color_id,
+      stock_quantity: variant.stock_quantity,
+      price: variant.dimensions?.price || 0,
+      dimension_name: variant.dimensions?.name || 
+        `${variant.dimensions?.width}x${variant.dimensions?.height}${variant.dimensions?.depth ? 'x' + variant.dimensions?.depth : ''}`,
+      color_name: variant.polish_colors?.name || 'Unknown',
+      color_hex: variant.polish_colors?.hex_code,
+      width: variant.dimensions?.width,
+      height: variant.dimensions?.height,
+      depth: variant.dimensions?.depth
+    })) || [];
 
+    // Get available polish colors for this product
+    const availableColors = product.product_polish_colors?.map((ppc:any) => ({
+      id: ppc.polish_colors?.id,
+      name: ppc.polish_colors?.name,
+      hex_code: ppc.polish_colors?.hex_code,
+      description: ppc.polish_colors?.description
+    })) || [];
 
+    return {
+      ...product,
+      product_images: transformedImages,
+      product_variants: transformedVariants,
+      available_colors: availableColors,
+      category_name: product.categories?.name || 'Uncategorized'
+    };
+  }) || [];
 
-  // Helper function to upload images to Supabase storage
-  // ✅ Fixed uploadImages:
-  // ✅ uploadImages — version for root storage
-  async function uploadImages(files: File[], productId: string) {
-    const uploadedImages = [];
+  setProducts(transformedProducts);
+  setLoading(false);
+}
 
+  async function uploadImages(productId: string, polishColorId: string, files: File[]) {
+    const uploaded: any[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${productId}_${Date.now()}_${i}.${fileExt}`;
+      const ext = file.name.split(".").pop();
+      const fileName = `${productId}_${polishColorId}_${Date.now()}_${i}.${ext}`;
 
-      const { data, error } = await supabase.storage
-        .from('product-images')
+      const { error } = await supabase.storage
+        .from("product-images")
         .upload(fileName, file);
 
-      if (error) {
-        console.error('Upload error:', error);
-        continue;
+      if (!error) {
+        uploaded.push({
+          product_id: productId,
+          polish_color_id: polishColorId,
+          image_url: fileName,
+          is_primary: i === 0,
+        });
       }
-
-      uploadedImages.push({
-        url: fileName, // ✅ store only the storage key — no bucket name!
-        is_primary: i === 0,
-      });
     }
-
-    return uploadedImages;
+    return uploaded;
   }
 
-
-
-  // Helper function to delete images from storage
-  async function deleteImagesFromStorage(imageUrls: string[]) {
-    for (const url of imageUrls) {
-      // Extract filename from URL
-      const urlParts = url.split('/');
-      const fileName = urlParts[urlParts.length - 1];
-
-      await supabase.storage
-        .from('product-images')
-        .remove([fileName]);
-    }
+  async function deleteImagesFromStorage(fileKeys: string[]) {
+    if (fileKeys.length === 0) return;
+    await supabase.storage.from("product-images").remove(fileKeys);
   }
 
   async function addProduct(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
 
-    const {
-      name,
-      description,
-      full_description,
-      base_price,
-      polish_color,
-      discount,
-      variants,
-      images,
-    } = formData;
+    const { name, description, category_id, dimensions, polish_color_ids, variants, images } = formData;
 
-    // Insert product
+    // Insert Product
     const { data: product, error: productError } = await supabase
       .from("products")
-      .insert([
-        {
-          name,
-          description,
-          full_description,
-          base_price: Number(base_price),
-          polish_color,
-          discount: Number(discount) || 0,
-        },
-      ])
+      .insert([{ name, description, category_id }])
       .select()
       .single();
 
@@ -170,40 +204,45 @@ export function useProducts() {
 
     const productId = product.id;
 
-    // Insert variants
-    const variantsToInsert = variants.map((v) => ({
+    // Insert Dimensions
+    const dimensionsToInsert = dimensions.map((d: any) => ({
       product_id: productId,
-      dimension: v.dimension,
-      price: Number(v.price),
+      name: d.name,
+      width: d.width,
+      height: d.height,
+      depth: d.depth,
+      price: d.price,
     }));
+    await supabase.from("dimensions").insert(dimensionsToInsert);
 
-    const { error: variantError } = await supabase
-      .from("product_variants")
-      .insert(variantsToInsert);
+    // Link Polish Colors
+    const polishLinks = polish_color_ids.map((pid: string) => ({
+      product_id: productId,
+      polish_color_id: pid,
+    }));
+    await supabase.from("product_polish_colors").insert(polishLinks);
 
-    if (variantError) {
-      console.error(variantError);
-      setLoading(false);
-      return;
-    }
+    // Insert Variant Options
+    const variantsToInsert = variants.map((v: any) => {
+  // Find the actual dimension UUID by index
+  const dimensionIndex = parseInt(v.dimensionId);
+  const dimensionUuid = dimensionsToInsert[dimensionIndex]?.id; // You'll need to get this from the inserted dimensions
+  
+  return {
+    product_id: productId, // or editingProduct.id
+    dimension_id: dimensionUuid,
+    polish_color_id: v.polishColorId,
+    stock_quantity: parseInt(v.stock),
+  };
+});
+    await supabase.from("variant_options").insert(variantsToInsert);
 
-    // Handle image uploads
-    const imageFiles = images.filter((img: any) => img instanceof File);
-    if (imageFiles.length > 0) {
-      const uploadedImages = await uploadImages(imageFiles, productId);
-
-      if (uploadedImages.length > 0) {
-        const imagesToInsert = uploadedImages.map((img) => ({
-          product_id: productId,
-          image_url: img.url,
-          is_primary: img.is_primary,
-        }));
-
-        const { error: imageError } = await supabase
-          .from("product_images")
-          .insert(imagesToInsert);
-
-        if (imageError) console.error(imageError);
+    // Upload Images
+    for (const polishColorId of polish_color_ids) {
+      const files = images[polishColorId] || [];
+      const uploaded = await uploadImages(productId, polishColorId, files);
+      if (uploaded.length > 0) {
+        await supabase.from("product_images").insert(uploaded);
       }
     }
 
@@ -216,78 +255,69 @@ export function useProducts() {
   async function updateProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!editingProduct) return;
-
     setLoading(true);
 
-    const {
-      name,
-      description,
-      full_description,
-      base_price,
-      polish_color,
-      discount,
-      variants,
-      images,
-    } = formData;
+    const { name, description, category_id, dimensions, polish_color_ids, variants, images } = formData;
 
-    const { error: updateError } = await supabase
+    await supabase
       .from("products")
-      .update({
-        name,
-        description,
-        full_description,
-        base_price: Number(base_price),
-        polish_color,
-        discount: Number(discount) || 0,
-      })
+      .update({ name, description, category_id })
       .eq("id", editingProduct.id);
 
-    if (updateError) {
-      console.error(updateError);
-      setLoading(false);
-      return;
-    }
-
-    // Remove old variants, insert new
-    await supabase
-      .from("product_variants")
-      .delete()
-      .eq("product_id", editingProduct.id);
-
-    const newVariants = variants.map((v) => ({
+    await supabase.from("dimensions").delete().eq("product_id", editingProduct.id);
+    const dimsToInsert = dimensions.map((d: any) => ({
       product_id: editingProduct.id,
-      dimension: v.dimension,
-      price: Number(v.price),
+      name: d.name,
+      width: d.width,
+      height: d.height,
+      depth: d.depth,
+      price: d.price,
     }));
+    await supabase.from("dimensions").insert(dimsToInsert);
 
-    await supabase.from("product_variants").insert(newVariants);
-
-    // Handle image updates
-    const existingImages = editingProduct.product_images || [];
-    const existingImageUrls = existingImages.map((img: any) => img.image_url);
-
-    // Delete old images from storage
-    await deleteImagesFromStorage(existingImageUrls);
-
-    // Remove old image records
     await supabase
-      .from("product_images")
+      .from("product_polish_colors")
       .delete()
       .eq("product_id", editingProduct.id);
+    const polishLinks = polish_color_ids.map((pid: string) => ({
+      product_id: editingProduct.id,
+      polish_color_id: pid,
+    }));
+    await supabase.from("product_polish_colors").insert(polishLinks);
 
-    // Upload new images
-    const imageFiles = images.filter((img: any) => img instanceof File);
-    if (imageFiles.length > 0) {
-      const uploadedImages = await uploadImages(imageFiles, editingProduct.id);
+    await supabase
+      .from("variant_options")
+      .delete()
+      .eq("product_id", editingProduct.id);
+    const variantsToInsert = variants.map((v: any) => {
+  // Find the actual dimension UUID by index
+  const dimensionIndex = parseInt(v.dimensionId);
+  const dimensionUuid = dimsToInsert[dimensionIndex]?.id; // You'll need to get this from the inserted dimensions
+  
+  return {
+    product_id: editingProduct.id, // or editingProduct.id
+    dimension_id: dimensionUuid,
+    polish_color_id: v.polishColorId,
+    stock_quantity: parseInt(v.stock),
+  };
+});
+    await supabase.from("variant_options").insert(variantsToInsert);
 
-      if (uploadedImages.length > 0) {
-        const imagesToInsert = uploadedImages.map((img) => ({
-          product_id: editingProduct.id,
-          image_url: img.url,
-          is_primary: img.is_primary,
-        }));
+    // Images: delete old from storage & DB, upload new
+    const { data: oldImgs } = await supabase
+      .from("product_images")
+      .select("image_url")
+      .eq("product_id", editingProduct.id);
 
-        await supabase.from("product_images").insert(imagesToInsert);
+    const oldKeys = oldImgs?.map((i) => i.image_url) || [];
+    await deleteImagesFromStorage(oldKeys);
+    await supabase.from("product_images").delete().eq("product_id", editingProduct.id);
+
+    for (const polishColorId of polish_color_ids) {
+      const files = images[polishColorId] || [];
+      const uploaded = await uploadImages(editingProduct.id, polishColorId, files);
+      if (uploaded.length > 0) {
+        await supabase.from("product_images").insert(uploaded);
       }
     }
 
@@ -299,54 +329,51 @@ export function useProducts() {
 
   async function deleteProduct(id: string) {
     setLoading(true);
-
-    // Get product images before deletion
-    const { data: productImages } = await supabase
+    const { data: imgs } = await supabase
       .from("product_images")
       .select("image_url")
       .eq("product_id", id);
 
-    if (productImages && productImages.length > 0) {
-      const imageUrls = productImages.map((img) => img.image_url);
-      await deleteImagesFromStorage(imageUrls);
-    }
-
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) console.error(error);
+    const keys = imgs?.map((i) => i.image_url) || [];
+    await deleteImagesFromStorage(keys);
+    await supabase.from("products").delete().eq("id", id);
 
     await fetchProducts();
     setLoading(false);
   }
 
-  function startEdit(product: any) {
+  function startEdit(product: Product) {
     setEditingProduct(product);
     setFormData({
       name: product.name,
       description: product.description,
-      full_description: product.full_description,
-      base_price: product.base_price,
-      polish_color: product.polish_color,
-      discount: product.discount,
-      variants: product.product_variants || [{ dimension: "", price: "" }],
-      images: [], // Reset images for editing (user will upload new ones)
+      category_id: product.category_id,
+      dimensions: product.dimensions,
+      polish_color_ids: product.product_polish_colors.map(
+        (p: any) => p.polish_color_id
+      ),
+      variants: product.variant_options.map((v: any) => ({
+  dimensionId: v.dimension_id,
+  polishColorId: v.polish_color_id,
+  stock: v.stock_quantity,
+})),
+      images: {}, // Admin must upload fresh if needed
     });
   }
-
   function cancelEdit() {
-    resetForm();
-  }
+  resetForm();
+}
 
   function resetForm() {
     setEditingProduct(null);
     setFormData({
       name: "",
       description: "",
-      full_description: "",
-      base_price: "",
-      polish_color: "",
-      discount: "",
-      variants: [{ dimension: "", price: "" }],
-      images: [],
+      category_id: "",
+      dimensions: [],
+      polish_color_ids: [],
+      variants: [],
+      images: {},
     });
   }
 
@@ -362,6 +389,8 @@ export function useProducts() {
     updateProduct,
     deleteProduct,
     startEdit,
+    resetForm,
+    fetchProducts,
     cancelEdit,
   };
 }
