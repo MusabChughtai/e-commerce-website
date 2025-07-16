@@ -1,9 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Sheet, SheetTrigger } from "@/components/ui/sheet";
-import { Badge } from "@/components/ui/badge";
-import { User, Heart, Search, ShoppingCart, Settings, Menu } from "lucide-react";
-import { AccountModal } from "../../../app/components/account-modal";
+import { Settings, Menu, Shield } from "lucide-react";
 
 interface AdminHeaderProps {
   isAccountOpen: boolean;
@@ -15,6 +11,7 @@ interface AdminHeaderProps {
   onNavigateProducts: () => void;
   onNavigateServices: () => void;
   setIsMobileMenuOpen: (open: boolean) => void;
+  onToggleSidebar: () => void;
 }
 
 export function AdminHeader({
@@ -27,76 +24,39 @@ export function AdminHeader({
   onNavigateProducts,
   onNavigateServices,
   setIsMobileMenuOpen,
+  onToggleSidebar,
 }: AdminHeaderProps) {
   return (
-    <header className="bg-gradient-to-r from-[#4a7c59] to-[#3d6b4a] shadow-lg border-b border-[#2d5a3a]">
+    <header className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] shadow-xl border-b border-[#1a332e] fixed top-0 left-0 right-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Mobile menu trigger */}
-          <div className="md:hidden">
-            <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)} className="text-[#f4d03f]">
+          {/* Mobile sidebar toggle */}
+          <div className="lg:hidden">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={onToggleSidebar} 
+              className="text-white hover:bg-white/10 hover:text-white"
+            >
               <Menu className="h-5 w-5" />
             </Button>
           </div>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex space-x-8">
-            <button onClick={onNavigateHome} className="text-[#f4d03f] font-medium">
-              HOME
-            </button>
-            <button onClick={onNavigateProducts} className="text-[#f4d03f] font-medium">
-              SHOP
-            </button>
-            <button onClick={onNavigateServices} className="text-[#f4d03f] font-medium">
-              SERVICES
-            </button>
-            <div className="flex items-center space-x-2">
-              <Settings className="h-4 w-4 text-[#f7dc6f]" />
-              <span className="text-[#f7dc6f] font-medium">ADMIN</span>
+          {/* Desktop spacer */}
+          <div className="hidden lg:block w-12"></div>
+
+          {/* Center Logo and Title */}
+          <div className="flex items-center justify-center space-x-3">
+            <div className="p-2 bg-white/20 rounded-2xl backdrop-blur-sm">
+              <Shield className="h-7 w-7 text-white" />
             </div>
-          </nav>
-
-          {/* Logo */}
-          <div className="flex items-center">
-            <button onClick={onNavigateHome} className="text-2xl font-bold text-[#f4d03f]">
-              East Crafts
-            </button>
+            <h1 className="text-xl font-bold text-white tracking-wide">
+              East Crafts Admin Portal
+            </h1>
           </div>
 
-          {/* Right icons */}
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" className="text-[#f4d03f]">
-              <Search className="h-5 w-5" />
-            </Button>
-
-            <Dialog open={isAccountOpen} onOpenChange={setIsAccountOpen}>
-              <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-[#f4d03f]">
-                  <User className="h-5 w-5" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <AccountModal />
-              </DialogContent>
-            </Dialog>
-
-            <Button variant="ghost" size="icon" className="text-[#f4d03f]">
-              <Heart className="h-5 w-5" />
-            </Button>
-
-            <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative text-[#f4d03f]">
-                  <ShoppingCart className="h-5 w-5" />
-                  {getTotalItems() > 0 && (
-                    <Badge className="absolute -top-2 -right-2 bg-[#f4d03f] text-[#4a7c59]">
-                      {getTotalItems()}
-                    </Badge>
-                  )}
-                </Button>
-              </SheetTrigger>
-            </Sheet>
-          </div>
+          {/* Right spacer to balance the layout */}
+          <div className="w-12"></div>
         </div>
       </div>
     </header>

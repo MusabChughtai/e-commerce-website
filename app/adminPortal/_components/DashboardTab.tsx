@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Package, DollarSign, TrendingUp, Users } from "lucide-react";
+import { Eye, Package, DollarSign, TrendingUp, Users, ShoppingCart, Star, Calendar, Activity } from "lucide-react";
 
 interface DashboardTabProps {
   products: any[];
@@ -26,51 +26,178 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
 
   const totalRevenue = products.reduce((sum, p) => sum + getProductPrice(p), 0);
   const averagePrice = products.length > 0 ? totalRevenue / products.length : 0;
+  const inStockProducts = products.filter(p => {
+    // Check if product has stock
+    if (p.product_variants && p.product_variants.length > 0) {
+      return p.product_variants.some((variant: any) => variant.stock > 0);
+    }
+    return true; // Assume in stock if no variants
+  }).length;
+  const outOfStockProducts = products.length - inStockProducts;
+
+  const stats = [
+    {
+      title: "Total Products",
+      value: products.length.toString(),
+      icon: Package,
+      description: "Active products in catalog"
+    },
+    {
+      title: "Total Inventory Value",
+      value: formatPrice(totalRevenue),
+      icon: DollarSign,
+      description: "Combined value of all products"
+    },
+    {
+      title: "Average Product Price",
+      value: formatPrice(averagePrice),
+      icon: TrendingUp,
+      description: "Mean price across all products"
+    },
+    {
+      title: "In Stock",
+      value: inStockProducts.toString(),
+      icon: ShoppingCart,
+      description: "Products available for sale"
+    },
+    {
+      title: "Out of Stock",
+      value: outOfStockProducts.toString(),
+      icon: Activity,
+      description: "Products needing restock"
+    },
+    {
+      title: "Product Categories",
+      value: "4",
+      icon: Users,
+      description: "Different product categories"
+    }
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
-          <CardHeader>
-            <CardTitle>Total Products</CardTitle>
-          </CardHeader>
-          <CardContent>{products.length}</CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-green-50 to-green-100">
-          <CardHeader>
-            <CardTitle>Total Value</CardTitle>
-          </CardHeader>
-          <CardContent>{formatPrice(totalRevenue)}</CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
-          <CardHeader>
-            <CardTitle>Average Price</CardTitle>
-          </CardHeader>
-          <CardContent>{formatPrice(averagePrice)}</CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-orange-50 to-orange-100">
-          <CardHeader>
-            <CardTitle>Categories</CardTitle>
-          </CardHeader>
-          <CardContent>4</CardContent>
-        </Card>
+    <div className="space-y-8">
+      {/* Main Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {stats.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
+            <div
+              key={index}
+              className="group relative overflow-hidden bg-white/60 backdrop-blur-xl rounded-3xl border border-gray-200/50 shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-[#23423d]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="relative p-8">
+                <div className="flex items-start justify-between mb-6">
+                  <div className="p-3 bg-gradient-to-br from-[#23423d] to-[#1e3b36] rounded-2xl shadow-lg">
+                    <Icon className="h-7 w-7 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-3xl font-bold text-[#23423d] mb-1">{stat.value}</div>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{stat.title}</h3>
+                  <p className="text-sm text-gray-600">{stat.description}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Recent Products */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Products</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {products.slice(0, 5).map((p) => (
-            <div key={p.id} className="flex justify-between py-2">
-              <span>{p.name}</span>
-              <Badge>{formatPrice(getProductPrice(p))}</Badge>
+      {/* Analytics Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Product Distribution */}
+        <div className="bg-white/60 backdrop-blur-xl rounded-3xl border border-gray-200/50 shadow-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] px-8 py-6">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-white/20 rounded-2xl">
+                <Activity className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Inventory Status</h3>
             </div>
-          ))}
-        </CardContent>
-      </Card>
+          </div>
+          <div className="p-8">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-4 h-4 bg-gradient-to-r from-[#23423d] to-[#1e3b36] rounded-full"></div>
+                  <span className="text-gray-700 font-medium">In Stock</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-2xl font-bold text-[#23423d]">{inStockProducts}</span>
+                  <span className="text-sm text-gray-500">products</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-4 h-4 bg-gray-300 rounded-full"></div>
+                  <span className="text-gray-700 font-medium">Out of Stock</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-2xl font-bold text-gray-600">{outOfStockProducts}</span>
+                  <span className="text-sm text-gray-500">products</span>
+                </div>
+              </div>
+              {products.length > 0 && (
+                <div className="mt-6">
+                  <div className="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>Stock Health</span>
+                    <span>{Math.round((inStockProducts / products.length) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div 
+                      className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] h-3 rounded-full transition-all duration-500"
+                      style={{ width: `${(inStockProducts / products.length) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="bg-white/60 backdrop-blur-xl rounded-3xl border border-gray-200/50 shadow-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] px-8 py-6">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-white/20 rounded-2xl">
+                <Star className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Quick Insights</h3>
+            </div>
+          </div>
+          <div className="p-8">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl">
+                <div>
+                  <div className="text-sm text-gray-600">Highest Priced</div>
+                  <div className="font-semibold text-[#23423d]">
+                    {products.length > 0 ? formatPrice(Math.max(...products.map(getProductPrice))) : formatPrice(0)}
+                  </div>
+                </div>
+                <TrendingUp className="h-8 w-8 text-[#23423d]" />
+              </div>
+              <div className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl">
+                <div>
+                  <div className="text-sm text-gray-600">Lowest Priced</div>
+                  <div className="font-semibold text-[#23423d]">
+                    {products.length > 0 ? formatPrice(Math.min(...products.map(getProductPrice))) : formatPrice(0)}
+                  </div>
+                </div>
+                <Activity className="h-8 w-8 text-[#23423d]" />
+              </div>
+              <div className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl">
+                <div>
+                  <div className="text-sm text-gray-600">Total Categories</div>
+                  <div className="font-semibold text-[#23423d]">4 Active</div>
+                </div>
+                <Users className="h-8 w-8 text-[#23423d]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

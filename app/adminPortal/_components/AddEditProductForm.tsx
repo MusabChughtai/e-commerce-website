@@ -57,7 +57,16 @@ interface FormData {
   dimensions: Dimension[];
   polish_color_ids: string[];
   variants: Variant[];
-  images: Record<string, File[]>;
+  images: Record<string, File[]> & { primaryIndices?: Record<string, number> };
+  existingImages: Record<string, ExistingImage[]>;
+}
+
+interface ExistingImage {
+  id: string;
+  image_url: string;
+  public_url: string;
+  polish_color_id: string;
+  is_primary: boolean;
 }
 
 interface AddEditProductFormProps {
@@ -85,7 +94,46 @@ export function AddEditProductForm({
   const [imagePreviews, setImagePreviews] = useState<Record<string, string[]>>(
     {}
   );
+  const [existingImagePreviews, setExistingImagePreviews] = useState<Record<string, ExistingImage[]>>({});
   const [dragActive, setDragActive] = useState<Record<string, boolean>>({});
+  const [primaryIndices, setPrimaryIndices] = useState<Record<string, number>>({});
+
+  // Load existing images when editing a product
+  useEffect(() => {
+    if (editingProduct && editingProduct.product_images) {
+      const existingImages: Record<string, ExistingImage[]> = {};
+      
+      editingProduct.product_images.forEach((img: any) => {
+        const polishColorId = img.polish_color_id;
+        if (!existingImages[polishColorId]) {
+          existingImages[polishColorId] = [];
+        }
+        existingImages[polishColorId].push({
+          id: img.id,
+          image_url: img.image_url,
+          public_url: img.public_url,
+          polish_color_id: img.polish_color_id,
+          is_primary: img.is_primary
+        });
+      });
+      
+      setExistingImagePreviews(existingImages);
+    } else {
+      setExistingImagePreviews({});
+    }
+  }, [editingProduct]);
+
+  // Sync existing images and primary indices with form data
+  useEffect(() => {
+    setFormData((prev: FormData) => ({
+      ...prev,
+      existingImages: existingImagePreviews,
+      images: {
+        ...prev.images,
+        primaryIndices
+      } as Record<string, File[]> & { primaryIndices?: Record<string, number> }
+    }));
+  }, [existingImagePreviews, primaryIndices, setFormData]);
 
   // === CATEGORY ===
   const [categories, setCategories] = useState<Category[]>([]);
@@ -112,21 +160,21 @@ export function AddEditProductForm({
   // === POPULATE FORM WHEN EDITING ===
   useEffect(() => {
     if (editingProduct && polishColors.length > 0) {
-      // Populate polish colors
-      if (editingProduct.polish_colors && editingProduct.polish_colors.length > 0) {
-        const polishColorIds = editingProduct.polish_colors.map((pc: any) => pc.id);
+      // Populate polish colors from available_colors
+      if (editingProduct.available_colors && editingProduct.available_colors.length > 0) {
+        const polishColorIds = editingProduct.available_colors.map((pc: any) => pc.id);
         setFormData(prev => ({
           ...prev,
           polish_color_ids: polishColorIds
         }));
       }
 
-      // Populate variants
-      if (editingProduct.variants && editingProduct.variants.length > 0) {
-        const variants = editingProduct.variants.map((v: any) => ({
-          dimensionId: v.dimension_id?.toString() || "",
+      // Populate variants from product_variants
+      if (editingProduct.product_variants && editingProduct.product_variants.length > 0) {
+        const variants = editingProduct.product_variants.map((v: any, index: number) => ({
+          dimensionId: index.toString(), // Use index since we're mapping to dimension array index
           polishColorId: v.polish_color_id || "",
-          stock: v.stock?.toString() || ""
+          stock: v.stock_quantity?.toString() || ""
         }));
         setFormData(prev => ({
           ...prev,
@@ -134,28 +182,46 @@ export function AddEditProductForm({
         }));
       }
 
-      // Populate images and image previews
-      if (editingProduct.images && editingProduct.images.length > 0) {
-        const imagesByPolish: Record<string, string[]> = {};
-        editingProduct.images.forEach((img: any) => {
-          if (img.polish_color_id && img.image_url) {
-            if (!imagesByPolish[img.polish_color_id]) {
-              imagesByPolish[img.polish_color_id] = [];
+      // Populate images and image previews from product_images
+      if (editingProduct.product_images && editingProduct.product_images.length > 0) {
+        const existingImagesByPolish: Record<string, ExistingImage[]> = {};
+        editingProduct.product_images.forEach((img: any) => {
+          if (img.polish_color_id && img.public_url) {
+            if (!existingImagesByPolish[img.polish_color_id]) {
+              existingImagesByPolish[img.polish_color_id] = [];
             }
-            imagesByPolish[img.polish_color_id].push(img.image_url);
+            existingImagesByPolish[img.polish_color_id].push({
+              id: img.id,
+              image_url: img.image_url,
+              public_url: img.public_url,
+              polish_color_id: img.polish_color_id,
+              is_primary: img.is_primary
+            });
           }
         });
-        setImagePreviews(imagesByPolish);
+        setExistingImagePreviews(existingImagesByPolish);
         
-        // Note: We can't populate actual File objects for existing images,
-        // but we can show the previews. The backend should handle this case.
+        // Set existing images in form data
+        const newImages = { primaryIndices: {} } as Record<string, File[]> & { primaryIndices?: Record<string, number> };
         setFormData(prev => ({
           ...prev,
-          images: {} // Clear file objects for existing images
+          existingImages: existingImagesByPolish,
+          images: newImages
+        }));
+        
+        // Clear new image previews when editing
+        setImagePreviews({});
+      } else {
+        // If no existing images, still initialize the tracking
+        const newImages = { primaryIndices: {} } as Record<string, File[]> & { primaryIndices?: Record<string, number> };
+        setFormData(prev => ({
+          ...prev,
+          existingImages: {},
+          images: newImages
         }));
       }
     }
-  }, [editingProduct, polishColors, setFormData]);
+  }, [editingProduct, polishColors]); // Removed setFormData from dependencies
 
   // === DIMENSIONS ===
   const handleDimensionChange = (index: number, field: keyof Dimension, value: string) => {
@@ -219,32 +285,100 @@ export function AddEditProductForm({
     if (!files) return;
 
     const fileArr = Array.from(files);
-    const updated = { ...formData.images };
-    updated[polishColorId] = (updated[polishColorId] || []).concat(fileArr);
-    setFormData({ ...formData, images: updated });
+    
+    // Create blob URLs for the new files
+    const newPreviews = fileArr.map((file) => URL.createObjectURL(file));
+    
+    // Update images with new files
+    setFormData(prev => {
+      const updatedImages = { ...prev.images };
+      
+      if (!updatedImages[polishColorId]) {
+        updatedImages[polishColorId] = [];
+      }
+      
+      // Add new files to images
+      updatedImages[polishColorId] = [...updatedImages[polishColorId], ...fileArr];
+      
+      return {
+        ...prev,
+        images: updatedImages
+      };
+    });
 
-    const previews = fileArr.map((file) => URL.createObjectURL(file));
-    setImagePreviews((prev) => ({
-      ...prev,
-      [polishColorId]: [...(prev[polishColorId] || []), ...previews],
-    }));
+    // Update previews separately to avoid nested state updates
+    setImagePreviews(prev => {
+      const updated = { ...prev };
+      if (!updated[polishColorId]) {
+        updated[polishColorId] = [];
+      }
+      updated[polishColorId] = [...updated[polishColorId], ...newPreviews];
+      return updated;
+    });
   };
 
   const removeImage = (polishColorId: string, imageIndex: number) => {
-    const updatedImages = { ...formData.images };
-    const updatedPreviews = { ...imagePreviews };
+    // For new images, remove from both images array and previews
+    const currentFiles = formData.images[polishColorId];
+    const currentPreviews = imagePreviews[polishColorId];
     
-    if (updatedImages[polishColorId]) {
-      updatedImages[polishColorId].splice(imageIndex, 1);
+    if (currentFiles && imageIndex < currentFiles.length) {
+      // Remove from images array
+      setFormData(prev => {
+        const updatedImages = { ...prev.images };
+        if (updatedImages[polishColorId]) {
+          updatedImages[polishColorId] = updatedImages[polishColorId].filter((_, index) => index !== imageIndex);
+        }
+        return {
+          ...prev,
+          images: updatedImages
+        };
+      });
+
+      // Remove from previews and revoke blob URL
+      if (currentPreviews && currentPreviews[imageIndex]) {
+        URL.revokeObjectURL(currentPreviews[imageIndex]);
+        setImagePreviews(prev => {
+          const updated = { ...prev };
+          if (updated[polishColorId]) {
+            updated[polishColorId] = updated[polishColorId].filter((_, index) => index !== imageIndex);
+          }
+          return updated;
+        });
+      }
     }
-    
-    if (updatedPreviews[polishColorId]) {
-      URL.revokeObjectURL(updatedPreviews[polishColorId][imageIndex]);
-      updatedPreviews[polishColorId].splice(imageIndex, 1);
+  };
+
+  const removeExistingImage = (polishColorId: string, imageId: string) => {
+    setExistingImagePreviews(prev => {
+      const updated = { ...prev };
+      if (updated[polishColorId]) {
+        updated[polishColorId] = updated[polishColorId].filter(img => img.id !== imageId);
+      }
+      return updated;
+    });
+  };
+
+  const setPrimaryImage = (polishColorId: string, imageIndex: number, isExisting: boolean) => {
+    if (isExisting) {
+      // Set primary for existing image
+      setExistingImagePreviews(prev => {
+        const updated = { ...prev };
+        if (updated[polishColorId]) {
+          updated[polishColorId] = updated[polishColorId].map((img, idx) => ({
+            ...img,
+            is_primary: idx === imageIndex
+          }));
+        }
+        return updated;
+      });
+    } else {
+      // Set primary for new image
+      setPrimaryIndices(prev => ({
+        ...prev,
+        [polishColorId]: imageIndex
+      }));
     }
-    
-    setFormData({ ...formData, images: updatedImages });
-    setImagePreviews(updatedPreviews);
   };
 
   const handleDrag = (e: React.DragEvent, polishColorId: string) => {
@@ -267,9 +401,14 @@ export function AddEditProductForm({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    editingProduct ? updateProduct(e) : addProduct(e);
+    
+    if (editingProduct) {
+      updateProduct(e);
+    } else {
+      addProduct(e);
+    }
   };
 
   return (
@@ -324,8 +463,11 @@ export function AddEditProductForm({
                     Product Name
                   </Label>
                   <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    value={formData.name || ""}
+                    onChange={(e) => setFormData(prev => ({ 
+                      ...prev, 
+                      name: e.target.value
+                    }))}
                     required
                     className="h-14 border-gray-200 rounded-2xl focus:border-[#23423d] focus:ring-[#23423d] shadow-sm bg-white/50"
                     placeholder="e.g., Modern Oak Dining Table"
@@ -339,9 +481,12 @@ export function AddEditProductForm({
                     Category
                   </Label>
                   <select
-                    value={formData.category_id}
+                    value={formData.category_id || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, category_id: e.target.value })
+                      setFormData(prev => ({ 
+                        ...prev, 
+                        category_id: e.target.value
+                      }))
                     }
                     className="w-full h-14 border border-gray-200 rounded-2xl px-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 bg-white/50 shadow-sm"
                   >
@@ -362,9 +507,12 @@ export function AddEditProductForm({
                   Description
                 </Label>
                 <textarea
-                  value={formData.description}
+                  value={formData.description || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
+                    setFormData(prev => ({ 
+                      ...prev, 
+                      description: e.target.value
+                    }))
                   }
                   className="w-full h-28 border border-gray-200 rounded-2xl px-4 py-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 resize-none bg-white/50 shadow-sm"
                   placeholder="Describe your product's features, materials, and craftsmanship details..."
@@ -391,60 +539,96 @@ export function AddEditProductForm({
                   {formData.dimensions.map((d, i) => (
                     <div key={i} className="bg-gradient-to-br from-gray-50 to-gray-100/50 p-8 rounded-2xl border border-gray-200 shadow-sm">
                       <div className="grid md:grid-cols-6 gap-4">
-                        <Input
-                          placeholder="Size (e.g. Small)"
-                          value={d.name}
-                          onChange={(e) =>
-                            handleDimensionChange(i, "name", e.target.value)
-                          }
-                          required
-                          className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
-                        />
-                        <Input
-                          placeholder="Width (in)"
-                          type="number"
-                          value={d.width}
-                          onChange={(e) =>
-                            handleDimensionChange(i, "width", e.target.value)
-                          }
-                          className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
-                        />
-                        <Input
-                          placeholder="Height (in)"
-                          type="number"
-                          value={d.height}
-                          onChange={(e) =>
-                            handleDimensionChange(i, "height", e.target.value)
-                          }
-                          className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
-                        />
-                        <Input
-                          placeholder="Depth (in)"
-                          type="number"
-                          value={d.depth}
-                          onChange={(e) =>
-                            handleDimensionChange(i, "depth", e.target.value)
-                          }
-                          className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
-                        />
-                        <Input
-                          placeholder="Length (in)"
-                          type="number"
-                          value={d.length}
-                          onChange={(e) =>
-                            handleDimensionChange(i, "length", e.target.value)
-                          }
-                          className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
-                        />
-                        <Input
-                          placeholder="Price (RS)"
-                          type="number"
-                          value={d.price}
-                          onChange={(e) =>
-                            handleDimensionChange(i, "price", e.target.value)
-                          }
-                          className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
-                        />
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Tag className="w-4 h-4 text-[#23423d]" />
+                            Size Name
+                          </Label>
+                          <Input
+                            placeholder="e.g. Small, Medium, Large"
+                            value={d.name || ""}
+                            onChange={(e) =>
+                              handleDimensionChange(i, "name", e.target.value)
+                            }
+                            required
+                            className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Ruler className="w-4 h-4 text-[#23423d]" />
+                            Width (inches)
+                          </Label>
+                          <Input
+                            placeholder="24"
+                            type="number"
+                            value={d.width || ""}
+                            onChange={(e) =>
+                              handleDimensionChange(i, "width", e.target.value)
+                            }
+                            className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Ruler className="w-4 h-4 text-[#23423d]" />
+                            Height (inches)
+                          </Label>
+                          <Input
+                            placeholder="30"
+                            type="number"
+                            value={d.height || ""}
+                            onChange={(e) =>
+                              handleDimensionChange(i, "height", e.target.value)
+                            }
+                            className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Ruler className="w-4 h-4 text-[#23423d]" />
+                            Depth (inches)
+                          </Label>
+                          <Input
+                            placeholder="18"
+                            type="number"
+                            value={d.depth || ""}
+                            onChange={(e) =>
+                              handleDimensionChange(i, "depth", e.target.value)
+                            }
+                            className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Ruler className="w-4 h-4 text-[#23423d]" />
+                            Length (inches)
+                          </Label>
+                          <Input
+                            placeholder="60"
+                            type="number"
+                            value={d.length || ""}
+                            onChange={(e) =>
+                              handleDimensionChange(i, "length", e.target.value)
+                            }
+                            className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Package className="w-4 h-4 text-[#23423d]" />
+                            Price (RS)
+                          </Label>
+                          <Input
+                            placeholder="15000"
+                            type="number"
+                            value={d.price || ""}
+                            onChange={(e) =>
+                              handleDimensionChange(i, "price", e.target.value)
+                            }
+                            className="border-gray-200 rounded-xl h-12 bg-white shadow-sm"
+                          />
+                        </div>
                       </div>
                       <Button 
                         type="button" 
@@ -518,46 +702,64 @@ export function AddEditProductForm({
                   {formData.variants.map((v, i) => (
                     <div key={i} className="bg-gradient-to-br from-gray-50 to-gray-100/50 p-8 rounded-2xl border border-gray-200 shadow-sm">
                       <div className="grid md:grid-cols-3 gap-4">
-                        <select
-                          value={v.dimensionId}
-                          onChange={(e) =>
-                            handleVariantChange(i, "dimensionId", e.target.value)
-                          }
-                          className="h-14 border border-gray-200 rounded-xl px-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 bg-white shadow-sm"
-                        >
-                          <option value="">Choose size dimension</option>
-                          {formData.dimensions.map((d, idx) => (
-                            <option key={idx} value={idx.toString()}>
-                              {d.name || `Dimension ${idx + 1}`}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={v.polishColorId}
-                          onChange={(e) =>
-                            handleVariantChange(i, "polishColorId", e.target.value)
-                          }
-                          className="h-14 border border-gray-200 rounded-xl px-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 bg-white shadow-sm"
-                        >
-                          <option value="">Choose polish color</option>
-                          {formData.polish_color_ids.map((pid) => {
-                            const p = polishColors.find((c) => c.id === pid);
-                            return (
-                              <option key={pid} value={pid}>
-                                {p?.name}
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Ruler className="w-4 h-4 text-[#23423d]" />
+                            Size Dimension
+                          </Label>
+                          <select
+                            value={v.dimensionId || ""}
+                            onChange={(e) =>
+                              handleVariantChange(i, "dimensionId", e.target.value)
+                            }
+                            className="w-full h-14 border border-gray-200 rounded-xl px-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 bg-white shadow-sm"
+                          >
+                            <option value="">Choose size dimension</option>
+                            {formData.dimensions.map((d, idx) => (
+                              <option key={idx} value={idx.toString()}>
+                                {d.name || `Dimension ${idx + 1}`}
                               </option>
-                            );
-                          })}
-                        </select>
-                        <Input
-                          placeholder="Stock quantity"
-                          type="number"
-                          value={v.stock}
-                          onChange={(e) =>
-                            handleVariantChange(i, "stock", e.target.value)
-                          }
-                          className="border-gray-200 rounded-xl h-14 bg-white shadow-sm"
-                        />
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Palette className="w-4 h-4 text-[#23423d]" />
+                            Polish Color
+                          </Label>
+                          <select
+                            value={v.polishColorId || ""}
+                            onChange={(e) =>
+                              handleVariantChange(i, "polishColorId", e.target.value)
+                            }
+                            className="w-full h-14 border border-gray-200 rounded-xl px-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 bg-white shadow-sm"
+                          >
+                            <option value="">Choose polish color</option>
+                            {formData.polish_color_ids.map((pid) => {
+                              const p = polishColors.find((c) => c.id === pid);
+                              return (
+                                <option key={pid} value={pid}>
+                                  {p?.name}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <Package className="w-4 h-4 text-[#23423d]" />
+                            Stock Quantity
+                          </Label>
+                          <Input
+                            placeholder="Stock quantity"
+                            type="number"
+                            value={v.stock || ""}
+                            onChange={(e) =>
+                              handleVariantChange(i, "stock", e.target.value)
+                            }
+                            className="border-gray-200 rounded-xl h-14 bg-white shadow-sm"
+                          />
+                        </div>
                       </div>
                       <Button 
                         type="button" 
@@ -627,36 +829,110 @@ export function AddEditProductForm({
                     </div>
 
                     {/* Image Previews - Outside upload area */}
-                    {imagePreviews[pid]?.length > 0 && (
+                    {(imagePreviews[pid]?.length > 0 || existingImagePreviews[pid]?.length > 0) && (
                       <div className="space-y-4">
                         <h4 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
                           <ImageIcon className="w-5 h-5 text-[#23423d]" />
-                          Uploaded Images ({imagePreviews[pid]?.length})
+                          Images ({(imagePreviews[pid]?.length || 0) + (existingImagePreviews[pid]?.length || 0)})
+                          {editingProduct && (
+                            <span className="text-sm text-gray-500 font-normal">
+                              - Existing: {existingImagePreviews[pid]?.length || 0}, 
+                              New: {imagePreviews[pid]?.length || 0}
+                            </span>
+                          )}
                         </h4>
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                          {imagePreviews[pid]?.map((url, i) => (
-                            <div key={i} className="relative group">
+                          {/* Display existing images */}
+                          {existingImagePreviews[pid]?.map((img, i) => (
+                            <div key={`existing-${img.id}`} className="relative group">
                               <img
-                                src={url}
-                                alt={`Preview ${i + 1} for ${polish?.name}`}
-                                className="w-full h-36 object-cover rounded-2xl border border-gray-200 shadow-md group-hover:shadow-lg transition-all"
+                                src={img.public_url}
+                                alt={`Existing ${i + 1} for ${polish?.name}`}
+                                className={`w-full h-36 object-cover rounded-2xl border shadow-md group-hover:shadow-lg transition-all ${
+                                  img.is_primary ? 'border-green-500 border-2' : 'border-gray-200'
+                                }`}
                               />
+                              {img.is_primary && (
+                                <div className="absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded">
+                                  Primary
+                                </div>
+                              )}
                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all rounded-2xl flex items-center justify-center">
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => removeImage(pid, i)}
-                                  className="bg-red-500 hover:bg-red-600 rounded-full w-10 h-10 p-0 shadow-lg"
-                                >
-                                  <X className="w-4 h-4" />
-                                </Button>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPrimaryImage(pid, i, true)}
+                                    className="bg-yellow-400 hover:bg-yellow-500 rounded-full w-10 h-10 p-0 shadow-lg transition-all transform hover:scale-110 flex items-center justify-center"
+                                  >
+                                    <Check className="w-5 h-5 text-white font-bold" strokeWidth={3} />
+                                  </button>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => removeExistingImage(pid, img.id)}
+                                    className="bg-red-500 hover:bg-red-600 rounded-full w-10 h-10 p-0 shadow-lg"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </div>
                               </div>
                               <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1">
-                                <span className="text-xs font-medium text-gray-800">#{i + 1}</span>
+                                <span className="text-xs font-medium text-gray-800">Existing #{i + 1}</span>
+                              </div>
+                              <div className="absolute top-2 right-2 px-2 py-1 rounded-lg text-xs font-medium bg-blue-500 text-white">
+                                Existing
                               </div>
                             </div>
                           ))}
+                          
+                          {/* Display new images */}
+                          {imagePreviews[pid]?.map((url, i) => {
+                            const isPrimary = primaryIndices[pid] === i;
+                            
+                            return (
+                              <div key={`new-${i}`} className="relative group">
+                                <img
+                                  src={url}
+                                  alt={`Preview ${i + 1} for ${polish?.name}`}
+                                  className={`w-full h-36 object-cover rounded-2xl border shadow-md group-hover:shadow-lg transition-all ${
+                                    isPrimary ? 'border-green-500 border-2' : 'border-gray-200'
+                                  }`}
+                                />
+                                {isPrimary && (
+                                  <div className="absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded">
+                                    Primary
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all rounded-2xl flex items-center justify-center">
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPrimaryImage(pid, i, false)}
+                                      className="bg-yellow-400 hover:bg-yellow-500 rounded-full w-10 h-10 p-0 shadow-lg transition-all transform hover:scale-110 flex items-center justify-center"
+                                    >
+                                      <Check className="w-5 h-5 text-white font-bold" strokeWidth={3} />
+                                    </button>
+                                    <Button
+                                      type="button"
+                                      variant="destructive"
+                                      size="sm"
+                                      onClick={() => removeImage(pid, i)}
+                                      className="bg-red-500 hover:bg-red-600 rounded-full w-10 h-10 p-0 shadow-lg"
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1">
+                                  <span className="text-xs font-medium text-gray-800">#{i + 1}</span>
+                                </div>
+                                <div className="absolute top-2 right-2 px-2 py-1 rounded-lg text-xs font-medium bg-green-500 text-white">
+                                  New
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

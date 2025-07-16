@@ -15,6 +15,14 @@ export interface Product {
   product_polish_colors: any[]; // Added to fix the error
 }
 
+interface ExistingImage {
+  id: string;
+  image_url: string;
+  public_url: string;
+  polish_color_id: string;
+  is_primary: boolean;
+}
+
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
@@ -28,7 +36,8 @@ export function useProducts() {
     dimensions: [],
     polish_color_ids: [],
     variants: [],
-    images: {}, // { [polishColorId]: File[] }
+    images: { primaryIndices: {} }, // { [polishColorId]: File[], primaryIndices: { [polishColorId]: number } }
+    existingImages: {}, // { [polishColorId]: ExistingImage[] }
   });
 
   useEffect(() => {
@@ -53,6 +62,7 @@ export function useProducts() {
         width,
         height,
         depth,
+        length,
         price
       ),
       product_polish_colors (
@@ -75,6 +85,7 @@ export function useProducts() {
           width,
           height,
           depth,
+          length,
           price
         ),
         polish_colors (
@@ -155,7 +166,7 @@ export function useProducts() {
   setLoading(false);
 }
 
-  async function uploadImages(productId: string, polishColorId: string, files: File[]) {
+  async function uploadImages(productId: string, polishColorId: string, files: File[], primaryIndex?: number) {
     const uploaded: any[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -171,7 +182,7 @@ export function useProducts() {
           product_id: productId,
           polish_color_id: polishColorId,
           image_url: fileName,
-          is_primary: i === 0,
+          is_primary: primaryIndex !== undefined ? i === primaryIndex : i === 0, // Use specified primary or default to first
         });
       }
     }
@@ -211,6 +222,7 @@ async function addProduct(e: React.FormEvent) {
     width: d.width,
     height: d.height,
     depth: d.depth,
+    length: d.length,
     price: d.price,
   }));
   
@@ -251,7 +263,8 @@ async function addProduct(e: React.FormEvent) {
   // Upload Images
   for (const polishColorId of polish_color_ids) {
     const files = images[polishColorId] || [];
-    const uploaded = await uploadImages(productId, polishColorId, files);
+    const primaryIndex = images.primaryIndices?.[polishColorId];
+    const uploaded = await uploadImages(productId, polishColorId, files, primaryIndex);
     if (uploaded.length > 0) {
       await supabase.from("product_images").insert(uploaded);
     }
@@ -268,7 +281,7 @@ async function updateProduct(e: React.FormEvent) {
   if (!editingProduct) return;
   setLoading(true);
 
-  const { name, description, category_id, dimensions, polish_color_ids, variants, images } = formData;
+  const { name, description, category_id, dimensions, polish_color_ids, variants, images, existingImages } = formData;
 
   await supabase
     .from("products")
@@ -284,6 +297,7 @@ async function updateProduct(e: React.FormEvent) {
     width: d.width,
     height: d.height,
     depth: d.depth,
+    length: d.length,
     price: d.price,
   }));
   
@@ -329,21 +343,63 @@ async function updateProduct(e: React.FormEvent) {
   
   await supabase.from("variant_options").insert(variantsToInsert);
 
-  // Images: delete old from storage & DB, upload new
+  // Images: handle existing and new images separately
   const { data: oldImgs } = await supabase
     .from("product_images")
-    .select("image_url")
+    .select("id, image_url, polish_color_id")
     .eq("product_id", editingProduct.id);
 
-  const oldKeys = oldImgs?.map((i) => i.image_url) || [];
-  await deleteImagesFromStorage(oldKeys);
-  await supabase.from("product_images").delete().eq("product_id", editingProduct.id);
-
+  // Get IDs of existing images that should be kept
+  const keptImageIds = new Set<string>();
+  const imagesToDelete: string[] = [];
+  
   for (const polishColorId of polish_color_ids) {
-    const files = images[polishColorId] || [];
-    const uploaded = await uploadImages(editingProduct.id, polishColorId, files);
-    if (uploaded.length > 0) {
-      await supabase.from("product_images").insert(uploaded);
+    const existingImagesForColor = formData.existingImages[polishColorId] || [];
+    existingImagesForColor.forEach((img: ExistingImage) => {
+      keptImageIds.add(img.id);
+    });
+  }
+
+  // Find images to delete (old images not in kept list)
+  oldImgs?.forEach((img: any) => {
+    if (!keptImageIds.has(img.id)) {
+      imagesToDelete.push(img.image_url);
+    }
+  });
+
+  // Delete removed images from storage and database
+  if (imagesToDelete.length > 0) {
+    await deleteImagesFromStorage(imagesToDelete);
+    // Delete specific image records
+    for (const imageUrl of imagesToDelete) {
+      await supabase
+        .from("product_images")
+        .delete()
+        .eq("product_id", editingProduct.id)
+        .eq("image_url", imageUrl);
+    }
+  }
+
+  // Update primary status for existing images
+  for (const polishColorId of polish_color_ids) {
+    const existingImagesForColor = existingImages[polishColorId] || [];
+    for (const img of existingImagesForColor) {
+      await supabase
+        .from("product_images")
+        .update({ is_primary: img.is_primary })
+        .eq("id", img.id);
+    }
+  }
+
+  // Upload and insert new images only
+  for (const polishColorId of polish_color_ids) {
+    const newFiles = formData.images[polishColorId] || [];
+    if (newFiles.length > 0) {
+      const primaryIndex = formData.images.primaryIndices?.[polishColorId];
+      const uploaded = await uploadImages(editingProduct.id, polishColorId, newFiles, primaryIndex);
+      if (uploaded.length > 0) {
+        await supabase.from("product_images").insert(uploaded);
+      }
     }
   }
 
@@ -374,16 +430,21 @@ async function updateProduct(e: React.FormEvent) {
       name: product.name,
       description: product.description,
       category_id: product.category_id,
-      dimensions: product.dimensions,
-      polish_color_ids: product.product_polish_colors.map(
-        (p: any) => p.polish_color_id
-      ),
-      variants: product.variant_options.map((v: any) => ({
-  dimensionId: v.dimension_id,
-  polishColorId: v.polish_color_id,
-  stock: v.stock_quantity,
-})),
-      images: {}, // Admin must upload fresh if needed
+      dimensions: product.dimensions || [],
+      polish_color_ids: product.product_polish_colors?.map(
+        (p: any) => p.polish_colors?.id || p.polish_color_id
+      ) || [],
+      variants: product.variant_options?.map((v: any) => {
+        // Find the dimension index
+        const dimensionIndex = product.dimensions?.findIndex(d => d.id === v.dimension_id) || 0;
+        return {
+          dimensionId: dimensionIndex.toString(),
+          polishColorId: v.polish_color_id,
+          stock: v.stock_quantity?.toString() || "0",
+        };
+      }) || [],
+      images: { primaryIndices: {} }, // Reset new images and primary indices
+      existingImages: {}, // Will be populated by the form component
     });
   }
   function cancelEdit() {
@@ -399,7 +460,8 @@ async function updateProduct(e: React.FormEvent) {
       dimensions: [],
       polish_color_ids: [],
       variants: [],
-      images: {},
+      images: { primaryIndices: {} },
+      existingImages: {},
     });
   }
 
