@@ -26,14 +26,6 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
 
   const totalRevenue = products.reduce((sum, p) => sum + getProductPrice(p), 0);
   const averagePrice = products.length > 0 ? totalRevenue / products.length : 0;
-  const inStockProducts = products.filter(p => {
-    // Check if product has stock
-    if (p.product_variants && p.product_variants.length > 0) {
-      return p.product_variants.some((variant: any) => variant.stock > 0);
-    }
-    return true; // Assume in stock if no variants
-  }).length;
-  const outOfStockProducts = products.length - inStockProducts;
 
   const stats = [
     {
@@ -55,18 +47,6 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
       description: "Mean price across all products"
     },
     {
-      title: "In Stock",
-      value: inStockProducts.toString(),
-      icon: ShoppingCart,
-      description: "Products available for sale"
-    },
-    {
-      title: "Out of Stock",
-      value: outOfStockProducts.toString(),
-      icon: Activity,
-      description: "Products needing restock"
-    },
-    {
       title: "Product Categories",
       value: "4",
       icon: Users,
@@ -77,7 +57,7 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
   return (
     <div className="space-y-8">
       {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
@@ -114,7 +94,7 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
               <div className="p-2 bg-white/20 rounded-2xl">
                 <Activity className="h-6 w-6 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-white">Inventory Status</h3>
+              <h3 className="text-xl font-bold text-white">Product Overview</h3>
             </div>
           </div>
           <div className="p-8">
@@ -122,33 +102,33 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-4 h-4 bg-gradient-to-r from-[#23423d] to-[#1e3b36] rounded-full"></div>
-                  <span className="text-gray-700 font-medium">In Stock</span>
+                  <span className="text-gray-700 font-medium">Total Products</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-2xl font-bold text-[#23423d]">{inStockProducts}</span>
-                  <span className="text-sm text-gray-500">products</span>
+                  <span className="text-2xl font-bold text-[#23423d]">{products.length}</span>
+                  <span className="text-sm text-gray-500">items</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-4 h-4 bg-gray-300 rounded-full"></div>
-                  <span className="text-gray-700 font-medium">Out of Stock</span>
+                  <span className="text-gray-700 font-medium">Categories</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-2xl font-bold text-gray-600">{outOfStockProducts}</span>
-                  <span className="text-sm text-gray-500">products</span>
+                  <span className="text-2xl font-bold text-gray-600">4</span>
+                  <span className="text-sm text-gray-500">types</span>
                 </div>
               </div>
               {products.length > 0 && (
                 <div className="mt-6">
                   <div className="flex justify-between text-sm text-gray-600 mb-2">
-                    <span>Stock Health</span>
-                    <span>{Math.round((inStockProducts / products.length) * 100)}%</span>
+                    <span>Catalog Growth</span>
+                    <span>100%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
                     <div 
                       className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] h-3 rounded-full transition-all duration-500"
-                      style={{ width: `${(inStockProducts / products.length) * 100}%` }}
+                      style={{ width: '100%' }}
                     ></div>
                   </div>
                 </div>

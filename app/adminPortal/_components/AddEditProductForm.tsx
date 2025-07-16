@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
+import { ConfirmationModal } from "./ConfirmationModal";
 import { 
   Package, 
   FileText, 
@@ -47,7 +48,6 @@ interface Dimension {
 interface Variant {
   dimensionId: string;
   polishColorId: string;
-  stock: string;
 }
 
 interface FormData {
@@ -76,8 +76,7 @@ interface AddEditProductFormProps {
   addProduct: (e: React.FormEvent) => void;
   updateProduct: (e: React.FormEvent) => void;
   cancelEdit: () => void;
-  showSuccessModal: boolean;
-  setShowSuccessModal: (show: boolean) => void;
+  loading?: boolean;
 }
 
 export function AddEditProductForm({
@@ -87,8 +86,7 @@ export function AddEditProductForm({
   addProduct,
   updateProduct,
   cancelEdit,
-  showSuccessModal,
-  setShowSuccessModal,
+  loading = false,
 }: AddEditProductFormProps) {
   const imageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [imagePreviews, setImagePreviews] = useState<Record<string, string[]>>(
@@ -97,6 +95,28 @@ export function AddEditProductForm({
   const [existingImagePreviews, setExistingImagePreviews] = useState<Record<string, ExistingImage[]>>({});
   const [dragActive, setDragActive] = useState<Record<string, boolean>>({});
   const [primaryIndices, setPrimaryIndices] = useState<Record<string, number>>({});
+
+  // Categories and Polish Colors data
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [polishColors, setPolishColors] = useState<PolishColor[]>([]);
+
+  // Confirmation modal states
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalConfig, setConfirmModalConfig] = useState<{
+    type: 'save' | 'discard' | 'reset';
+    title: string;
+    description: string;
+    confirmText: string;
+    cancelText: string;
+    onConfirm: () => void;
+  }>({
+    type: 'save',
+    title: '',
+    description: '',
+    confirmText: '',
+    cancelText: '',
+    onConfirm: () => {},
+  });
 
   // Load existing images when editing a product
   useEffect(() => {
@@ -136,8 +156,6 @@ export function AddEditProductForm({
   }, [existingImagePreviews, primaryIndices, setFormData]);
 
   // === CATEGORY ===
-  const [categories, setCategories] = useState<Category[]>([]);
-
   useEffect(() => {
     async function fetchCategories() {
       const { data } = await supabase.from("categories").select("id, name");
@@ -147,8 +165,6 @@ export function AddEditProductForm({
   }, []);
 
   // === POLISH COLORS ===
-  const [polishColors, setPolishColors] = useState<PolishColor[]>([]);
-
   useEffect(() => {
     async function fetchPolishColors() {
       const { data } = await supabase.from("polish_colors").select("id, name, hex_code, description");
@@ -173,8 +189,7 @@ export function AddEditProductForm({
       if (editingProduct.product_variants && editingProduct.product_variants.length > 0) {
         const variants = editingProduct.product_variants.map((v: any, index: number) => ({
           dimensionId: index.toString(), // Use index since we're mapping to dimension array index
-          polishColorId: v.polish_color_id || "",
-          stock: v.stock_quantity?.toString() || ""
+          polishColorId: v.polish_color_id || ""
         }));
         setFormData(prev => ({
           ...prev,
@@ -223,6 +238,25 @@ export function AddEditProductForm({
     }
   }, [editingProduct, polishColors]); // Removed setFormData from dependencies
 
+  // === ENSURE MINIMUM DIMENSIONS AND VARIANTS ===
+  useEffect(() => {
+    // Ensure there's always at least one dimension
+    if (formData.dimensions.length === 0) {
+      setFormData(prev => ({
+        ...prev,
+        dimensions: [{ name: "", width: "", height: "", depth: "", length: "", price: "" }]
+      }));
+    }
+    
+    // Ensure there's always at least one variant
+    if (formData.variants.length === 0) {
+      setFormData(prev => ({
+        ...prev,
+        variants: [{ dimensionId: "", polishColorId: "" }]
+      }));
+    }
+  }, [formData.dimensions.length, formData.variants.length, setFormData]);
+
   // === DIMENSIONS ===
   const handleDimensionChange = (index: number, field: keyof Dimension, value: string) => {
     const dims = [...formData.dimensions];
@@ -241,6 +275,9 @@ export function AddEditProductForm({
   };
 
   const removeDimension = (index: number) => {
+    // Prevent removing if only one dimension remains
+    if (formData.dimensions.length <= 1) return;
+    
     const dims = [...formData.dimensions];
     dims.splice(index, 1);
     setFormData({ ...formData, dimensions: dims });
@@ -269,12 +306,15 @@ export function AddEditProductForm({
       ...formData,
       variants: [
         ...formData.variants,
-        { dimensionId: "", polishColorId: "", stock: "" },
+        { dimensionId: "", polishColorId: "" },
       ],
     });
   };
 
   const removeVariant = (index: number) => {
+    // Prevent removing if only one variant remains
+    if (formData.variants.length <= 1) return;
+    
     const vars = [...formData.variants];
     vars.splice(index, 1);
     setFormData({ ...formData, variants: vars });
@@ -403,41 +443,101 @@ export function AddEditProductForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Form submitted:", { editingProduct }); // Debug log
     
-    if (editingProduct) {
-      updateProduct(e);
-    } else {
-      addProduct(e);
-    }
+    const config = editingProduct 
+      ? {
+          type: 'save' as const,
+          title: 'Update Product',
+          description: 'Are you sure you want to update this product? This will save all your changes to the database.',
+          confirmText: 'Update Product',
+          cancelText: 'Continue Editing',
+          onConfirm: async () => {
+            try {
+              await updateProduct(e);
+              setShowConfirmModal(false);
+            } catch (error) {
+              console.error("Failed to update product:", error);
+              // Keep modal open on error
+            }
+          }
+        }
+      : {
+          type: 'save' as const,
+          title: 'Add Product',
+          description: 'Are you sure you want to add this new product? This will create a new product in the database.',
+          confirmText: 'Add Product',
+          cancelText: 'Continue Editing',
+          onConfirm: async () => {
+            try {
+              await addProduct(e);
+              setShowConfirmModal(false);
+            } catch (error) {
+              console.error("Failed to add product:", error);
+              // Keep modal open on error
+            }
+          }
+        };
+
+    setConfirmModalConfig(config);
+    setShowConfirmModal(true);
+  };
+
+  const handleCancel = () => {
+    console.log("Cancel button clicked"); // Debug log
+    
+    const config = {
+      type: 'discard' as const,
+      title: 'Discard Changes',
+      description: 'Are you sure you want to discard all your changes? This action cannot be undone and you will lose all unsaved progress.',
+      confirmText: 'Discard Changes',
+      cancelText: 'Continue Editing',
+      onConfirm: () => {
+        setShowConfirmModal(false);
+        cancelEdit();
+      }
+    };
+
+    setConfirmModalConfig(config);
+    setShowConfirmModal(true);
+  };
+
+  const handleReset = () => {
+    console.log("Reset button clicked"); // Debug log
+    
+    const config = {
+      type: 'reset' as const,
+      title: 'Reset Form',
+      description: 'Are you sure you want to reset the form? This will clear all your current inputs and return the form to its initial state.',
+      confirmText: 'Reset Form',
+      cancelText: 'Continue Editing',
+      onConfirm: () => {
+        setShowConfirmModal(false);
+        // Reset form to initial state
+        const initialImages = { primaryIndices: {} } as Record<string, File[]> & { primaryIndices?: Record<string, number> };
+        
+        setFormData({
+          name: "",
+          description: "",
+          category_id: "",
+          dimensions: [{ name: "", width: "", height: "", depth: "", length: "", price: "" }], // Always include one dimension
+          polish_color_ids: [],
+          variants: [{ dimensionId: "", polishColorId: "" }], // Always include one variant
+          images: initialImages,
+          existingImages: {},
+        });
+        setImagePreviews({});
+        setExistingImagePreviews({});
+        setPrimaryIndices({});
+      }
+    };
+
+    setConfirmModalConfig(config);
+    setShowConfirmModal(true);
   };
 
   return (
     <>
-      {/* SUCCESS MODAL */}
-      {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in-0">
-          <div className="bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border border-gray-200/50 animate-in zoom-in-95">
-            <div className="w-20 h-20 bg-gradient-to-br from-[#23423d] to-[#1e3b36] rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-              <Check className="w-10 h-10 text-white" />
-            </div>
-            <h3 className="text-2xl font-bold mb-3 text-gray-800">
-              {editingProduct ? "Product Updated" : "Product Added"}
-            </h3>
-            <p className="text-gray-600 mb-8">
-              {editingProduct
-                ? "Your product has been updated successfully."
-                : "Your product has been added successfully."}
-            </p>
-            <Button 
-              onClick={() => setShowSuccessModal(false)}
-              className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] hover:from-[#1e3b36] hover:to-[#192e2a] text-white px-8 py-3 rounded-2xl font-medium shadow-lg hover:shadow-xl transition-all"
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      )}
-
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100 p-6">
         <div className="max-w-5xl mx-auto">
           <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 overflow-hidden">
@@ -532,7 +632,7 @@ export function AddEditProductForm({
                     className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] hover:from-[#1e3b36] hover:to-[#192e2a] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all"
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Dimension
+                    Add Another Dimension
                   </Button>
                 </div>
                 <div className="space-y-6">
@@ -557,7 +657,7 @@ export function AddEditProductForm({
                         <div className="space-y-2">
                           <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                             <Ruler className="w-4 h-4 text-[#23423d]" />
-                            Width (inches)
+                            Width (in)
                           </Label>
                           <Input
                             placeholder="24"
@@ -572,7 +672,7 @@ export function AddEditProductForm({
                         <div className="space-y-2">
                           <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                             <Ruler className="w-4 h-4 text-[#23423d]" />
-                            Height (inches)
+                            Height (in)
                           </Label>
                           <Input
                             placeholder="30"
@@ -587,7 +687,7 @@ export function AddEditProductForm({
                         <div className="space-y-2">
                           <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                             <Ruler className="w-4 h-4 text-[#23423d]" />
-                            Depth (inches)
+                            Depth (in)
                           </Label>
                           <Input
                             placeholder="18"
@@ -602,7 +702,7 @@ export function AddEditProductForm({
                         <div className="space-y-2">
                           <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                             <Ruler className="w-4 h-4 text-[#23423d]" />
-                            Length (inches)
+                            Length (in)
                           </Label>
                           <Input
                             placeholder="60"
@@ -634,7 +734,8 @@ export function AddEditProductForm({
                         type="button" 
                         variant="destructive" 
                         onClick={() => removeDimension(i)}
-                        className="mt-6 bg-red-500 hover:bg-red-600 rounded-xl shadow-md hover:shadow-lg transition-all"
+                        disabled={formData.dimensions.length <= 1}
+                        className={`mt-6 ${formData.dimensions.length <= 1 ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'} rounded-xl shadow-md hover:shadow-lg transition-all`}
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Remove Dimension
@@ -686,7 +787,7 @@ export function AddEditProductForm({
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2 text-xl font-bold text-gray-800">
                     <Grid className="w-6 h-6 text-[#23423d]" />
-                    Variants (Dimension × Polish Color × Stock)
+                    Variants (Dimension × Polish Color)
                   </Label>
                   <Button 
                     type="button" 
@@ -694,14 +795,14 @@ export function AddEditProductForm({
                     className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] hover:from-[#1e3b36] hover:to-[#192e2a] text-white rounded-2xl shadow-lg hover:shadow-xl transition-all"
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Variant
+                    Add Another Variant
                   </Button>
                 </div>
-                <p className="text-sm text-gray-600 mb-6">Create combinations of dimensions and polish colors with their stock quantities</p>
+                <p className="text-sm text-gray-600 mb-6">Create combinations of dimensions and polish colors</p>
                 <div className="space-y-6">
                   {formData.variants.map((v, i) => (
                     <div key={i} className="bg-gradient-to-br from-gray-50 to-gray-100/50 p-8 rounded-2xl border border-gray-200 shadow-sm">
-                      <div className="grid md:grid-cols-3 gap-4">
+                      <div className="grid md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                             <Ruler className="w-4 h-4 text-[#23423d]" />
@@ -745,27 +846,13 @@ export function AddEditProductForm({
                             })}
                           </select>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                            <Package className="w-4 h-4 text-[#23423d]" />
-                            Stock Quantity
-                          </Label>
-                          <Input
-                            placeholder="Stock quantity"
-                            type="number"
-                            value={v.stock || ""}
-                            onChange={(e) =>
-                              handleVariantChange(i, "stock", e.target.value)
-                            }
-                            className="border-gray-200 rounded-xl h-14 bg-white shadow-sm"
-                          />
-                        </div>
                       </div>
                       <Button 
                         type="button" 
                         variant="destructive" 
                         onClick={() => removeVariant(i)}
-                        className="mt-6 bg-red-500 hover:bg-red-600 rounded-xl shadow-md hover:shadow-lg transition-all"
+                        disabled={formData.variants.length <= 1}
+                        className={`mt-6 ${formData.variants.length <= 1 ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'} rounded-xl shadow-md hover:shadow-lg transition-all`}
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Remove Variant
@@ -944,18 +1031,42 @@ export function AddEditProductForm({
               <div className="flex flex-col sm:flex-row gap-6 pt-12 border-t border-gray-200 justify-center items-center">
                 <Button 
                   type="submit"
-                  className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] hover:from-[#1e3b36] hover:to-[#192e2a] text-white px-12 py-6 rounded-3xl font-bold text-lg shadow-2xl hover:shadow-3xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group"
+                  disabled={loading}
+                  className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] hover:from-[#1e3b36] hover:to-[#192e2a] text-white px-12 py-6 rounded-3xl font-bold text-lg shadow-2xl hover:shadow-3xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
-                  <Save className="w-6 h-6 mr-3 group-hover:rotate-12 transition-transform" />
-                  {editingProduct ? "Update Product" : "Add Product"}
+                  {loading ? (
+                    <>
+                      <div className="animate-spin h-6 w-6 border-b-2 border-white rounded-full mr-3"></div>
+                      {editingProduct ? "Updating..." : "Adding..."}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-6 h-6 mr-3 group-hover:rotate-12 transition-transform" />
+                      {editingProduct ? "Update Product" : "Add Product"}
+                    </>
+                  )}
                 </Button>
+                {/* Only show Reset button when adding new product (not editing) */}
+                {!editingProduct && (
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={handleReset}
+                    disabled={loading}
+                    className="border-2 border-orange-300 hover:border-orange-400 bg-white hover:bg-orange-50 text-orange-700 hover:text-orange-900 px-12 py-6 rounded-3xl font-bold text-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    <RotateCcw className="w-6 h-6 mr-3 group-hover:-rotate-12 transition-transform" />
+                    Reset Form
+                  </Button>
+                )}
                 <Button 
                   type="button" 
                   variant="outline" 
-                  onClick={cancelEdit}
-                  className="border-2 border-gray-300 hover:border-gray-400 bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 px-12 py-6 rounded-3xl font-bold text-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group"
+                  onClick={handleCancel}
+                  disabled={loading}
+                  className="border-2 border-gray-300 hover:border-gray-400 bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 px-12 py-6 rounded-3xl font-bold text-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
-                  <RotateCcw className="w-6 h-6 mr-3 group-hover:-rotate-12 transition-transform" />
+                  <X className="w-6 h-6 mr-3 group-hover:rotate-12 transition-transform" />
                   Cancel
                 </Button>
               </div>
@@ -963,6 +1074,20 @@ export function AddEditProductForm({
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onConfirm={confirmModalConfig.onConfirm}
+        onCancel={() => setShowConfirmModal(false)}
+        title={confirmModalConfig.title}
+        description={confirmModalConfig.description}
+        confirmText={confirmModalConfig.confirmText}
+        cancelText={confirmModalConfig.cancelText}
+        type={confirmModalConfig.type}
+        loading={loading}
+      />
     </>
   );
 }

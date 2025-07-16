@@ -27,7 +27,6 @@ export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const [formData, setFormData] = useState<any>({
     name: "",
@@ -78,7 +77,6 @@ export function useProducts() {
         id,
         dimension_id,
         polish_color_id,
-        stock_quantity,
         dimensions (
           id,
           name,
@@ -134,7 +132,6 @@ export function useProducts() {
       id: variant.id,
       dimension_id: variant.dimension_id,
       polish_color_id: variant.polish_color_id,
-      stock_quantity: variant.stock_quantity,
       price: variant.dimensions?.price || 0,
       dimension_name: variant.dimensions?.name || 
         `${variant.dimensions?.width}x${variant.dimensions?.height}${variant.dimensions?.depth ? 'x' + variant.dimensions?.depth : ''}`,
@@ -210,7 +207,7 @@ async function addProduct(e: React.FormEvent) {
   if (productError) {
     console.error(productError);
     setLoading(false);
-    return;
+    throw new Error("Failed to create product: " + productError.message);
   }
 
   const productId = product.id;
@@ -234,7 +231,7 @@ async function addProduct(e: React.FormEvent) {
   if (dimensionError) {
     console.error(dimensionError);
     setLoading(false);
-    return;
+    throw new Error("Failed to create dimensions: " + dimensionError.message);
   }
 
   // Link Polish Colors
@@ -254,7 +251,6 @@ async function addProduct(e: React.FormEvent) {
       product_id: productId,
       dimension_id: dimensionUuid,
       polish_color_id: v.polishColorId,
-      stock_quantity: parseInt(v.stock),
     };
   });
   
@@ -272,7 +268,6 @@ async function addProduct(e: React.FormEvent) {
 
   await fetchProducts();
   resetForm();
-  setShowSuccessModal(true);
   setLoading(false);
 }
 
@@ -309,7 +304,7 @@ async function updateProduct(e: React.FormEvent) {
   if (dimensionError) {
     console.error(dimensionError);
     setLoading(false);
-    return;
+    throw new Error("Failed to update dimensions: " + dimensionError.message);
   }
 
   await supabase
@@ -337,7 +332,6 @@ async function updateProduct(e: React.FormEvent) {
       product_id: editingProduct.id,
       dimension_id: dimensionUuid,
       polish_color_id: v.polishColorId,
-      stock_quantity: parseInt(v.stock),
     };
   });
   
@@ -405,7 +399,6 @@ async function updateProduct(e: React.FormEvent) {
 
   await fetchProducts();
   resetForm();
-  setShowSuccessModal(true);
   setLoading(false);
 }
 
@@ -440,7 +433,6 @@ async function updateProduct(e: React.FormEvent) {
         return {
           dimensionId: dimensionIndex.toString(),
           polishColorId: v.polish_color_id,
-          stock: v.stock_quantity?.toString() || "0",
         };
       }) || [],
       images: { primaryIndices: {} }, // Reset new images and primary indices
@@ -471,8 +463,6 @@ async function updateProduct(e: React.FormEvent) {
     editingProduct,
     formData,
     setFormData,
-    showSuccessModal,
-    setShowSuccessModal,
     addProduct,
     updateProduct,
     deleteProduct,

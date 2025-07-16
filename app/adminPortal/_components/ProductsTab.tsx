@@ -7,38 +7,30 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Search, Edit, Trash2, Package, Palette, Plus } from "lucide-react";
 import Image from "next/image";
-import { AddEditProductForm } from "./AddEditProductForm";
+import { ConfirmationModal } from "./ConfirmationModal";
 
 interface ProductsTabProps {
   products: any[];
   loading: boolean;
-  editingProduct: any;
-  formData: any;
-  setFormData: (data: any) => void;
-  addProduct: (e: React.FormEvent) => void;
-  updateProduct: (e: React.FormEvent) => void;
   deleteProduct: (id: string) => void;
-  startEdit: (product: any) => void;
-  cancelEdit: () => void;
   formatPrice: (price: number) => string;
+  onAddProduct: () => void;
+  onEditProduct: (product: any) => void;
 }
 
 export function ProductsTab({
   products,
   loading,
-  editingProduct,
-  formData,
-  setFormData,
-  addProduct,
-  updateProduct,
   deleteProduct,
-  startEdit,
-  cancelEdit,
   formatPrice,
+  onAddProduct,
+  onEditProduct,
 }: ProductsTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  
+  // Confirmation modal states
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<any>(null);
 
   const filteredProducts = products.filter(
     (p) =>
@@ -96,15 +88,6 @@ export function ProductsTab({
     return "Price not set";
   };
 
-  const getTotalStock = (product: any) => {
-    if (!product.product_variants || product.product_variants.length === 0) {
-      return 0;
-    }
-    return product.product_variants.reduce((total: number, variant: any) => 
-      total + (variant.stock_quantity || 0), 0
-    );
-  };
-
   const getAvailableSizes = (product: any) => {
     if (!product.dimensions || product.dimensions.length === 0) {
       return [];
@@ -118,48 +101,27 @@ export function ProductsTab({
   };
 
   const handleAddProduct = () => {
-    setShowAddForm(true);
+    console.log("Add Product button clicked"); // Debug log
+    onAddProduct();
   };
 
   const handleEditProduct = (product: any) => {
-    startEdit(product);
-    setShowAddForm(true);
+    console.log("Edit Product button clicked", product); // Debug log
+    onEditProduct(product);
   };
 
-  const handleCancelEdit = () => {
-    cancelEdit();
-    setShowAddForm(false);
+  const handleDeleteConfirmation = (product: any) => {
+    setProductToDelete(product);
+    setShowDeleteModal(true);
   };
 
-  const handleAddProductSubmit = (e: React.FormEvent) => {
-    addProduct(e);
-    setShowSuccessModal(true);
-    setShowAddForm(false);
+  const confirmDelete = () => {
+    if (productToDelete) {
+      deleteProduct(productToDelete.id);
+      setShowDeleteModal(false);
+      setProductToDelete(null);
+    }
   };
-
-  const handleUpdateProductSubmit = (e: React.FormEvent) => {
-    updateProduct(e);
-    setShowSuccessModal(true);
-    setShowAddForm(false);
-  };
-
-  // Show form if we're adding or editing
-  if (showAddForm || editingProduct) {
-    return (
-      <div className="space-y-6">
-        <AddEditProductForm
-          formData={formData}
-          setFormData={setFormData}
-          editingProduct={editingProduct}
-          addProduct={handleAddProductSubmit}
-          updateProduct={handleUpdateProductSubmit}
-          cancelEdit={handleCancelEdit}
-          showSuccessModal={showSuccessModal}
-          setShowSuccessModal={setShowSuccessModal}
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8">
@@ -225,12 +187,6 @@ export function ProductsTab({
                     e.currentTarget.src = "/placeholder.svg";
                   }}
                 />
-                {/* Enhanced stock badge */}
-                {getTotalStock(product) === 0 && (
-                  <div className="absolute top-4 right-4 bg-gradient-to-r from-red-500 to-red-600 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg backdrop-blur-sm">
-                    Out of Stock
-                  </div>
-                )}
                 {/* Status overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               </div>
@@ -292,18 +248,12 @@ export function ProductsTab({
                   </div>
                 )}
 
-                {/* Price and Stock section */}
+                {/* Price section */}
                 <div className="flex justify-between items-center mb-6 p-4 bg-gradient-to-r from-gray-50/80 to-gray-100/40 rounded-2xl border border-gray-100">
                   <div className="flex flex-col">
                     <span className="text-xs font-medium text-gray-500 mb-1">Price Range</span>
                     <span className="text-lg font-bold bg-gradient-to-r from-[#23423d] to-[#1e3b36] bg-clip-text text-transparent">
                       {getPriceRange(product)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs font-medium text-gray-500 mb-1">Stock</span>
-                    <span className={`text-sm font-semibold ${getTotalStock(product) > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {getTotalStock(product)} units
                     </span>
                   </div>
                 </div>
@@ -328,11 +278,7 @@ export function ProductsTab({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        if (confirm(`Delete product "${product.name}"? This action cannot be undone.`)) {
-                          deleteProduct(product.id);
-                        }
-                      }}
+                      onClick={() => handleDeleteConfirmation(product)}
                       className="group/btn border-red-200 hover:bg-red-500 hover:text-white hover:border-red-500 rounded-2xl px-4 py-2 transition-all duration-200 hover:shadow-lg"
                     >
                       <Trash2 className="h-4 w-4 group-hover/btn:scale-110 transition-transform duration-200" />
@@ -344,6 +290,20 @@ export function ProductsTab({
           ))}
         </div>
       )}
+      
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDelete}
+        onCancel={() => setShowDeleteModal(false)}
+        title="Confirm Delete Permanently"
+        description={`Are you sure you want to permanently delete "${productToDelete?.name}"? This action cannot be undone and will remove the product, all its variants, images, and associated data from the database forever.`}
+        confirmText="Delete Forever"
+        cancelText="Cancel"
+        type="delete"
+        loading={loading}
+      />
     </div>
   );
 }

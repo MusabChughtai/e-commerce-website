@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useProducts } from "./hooks/useProducts";
 import { DashboardTab } from "./_components/DashboardTab";
 import { ProductsTab } from "./_components/ProductsTab";
+import { AddEditProductForm } from "./_components/AddEditProductForm";
 import { AdminHeader } from "./_components/AdminHeader";
 import { MobileMenu } from "./_components/MobileMenu";
 import { CartSheet } from "./_components/CartSheet";
@@ -44,8 +45,26 @@ export function AdminPortal({
     cancelEdit,
   } = useProducts();
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "products">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "add-product" | "edit-product">("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const handleAddProduct = () => {
+    setActiveTab("add-product");
+  };
+
+  const handleEditProduct = (product: any) => {
+    startEdit(product);
+    setActiveTab("edit-product");
+  };
+
+  const handleCancelEdit = () => {
+    cancelEdit();
+    setActiveTab("products");
+  };
+
+  const handleProductSaved = () => {
+    setActiveTab("products");
+  };
 
   const menuItems = [
     {
@@ -108,7 +127,7 @@ export function AdminPortal({
                       key={item.id}
                       onClick={() => setActiveTab(item.id as "dashboard" | "products")}
                       className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-2xl transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5 ${
-                        activeTab === item.id
+                        activeTab === item.id || (item.id === "products" && (activeTab === "add-product" || activeTab === "edit-product"))
                           ? "bg-gradient-to-r from-[#23423d] to-[#1e3b36] text-white shadow-lg"
                           : "text-gray-700 hover:bg-gradient-to-r hover:from-gray-100 hover:to-gray-50 hover:text-[#23423d]"
                       }`}
@@ -149,7 +168,7 @@ export function AdminPortal({
                         setIsSidebarOpen(false);
                       }}
                       className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-2xl transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5 ${
-                        activeTab === item.id
+                        activeTab === item.id || (item.id === "products" && (activeTab === "add-product" || activeTab === "edit-product"))
                           ? "bg-gradient-to-r from-[#23423d] to-[#1e3b36] text-white shadow-lg"
                           : "text-gray-700 hover:bg-gradient-to-r hover:from-gray-100 hover:to-gray-50 hover:text-[#23423d]"
                       }`}
@@ -198,18 +217,39 @@ export function AdminPortal({
                     <ProductsTab
                       products={products}
                       loading={loading}
-                      editingProduct={editingProduct}
-                      formData={formData}
-                      setFormData={setFormData}
-                      addProduct={addProduct}
-                      updateProduct={updateProduct}
                       deleteProduct={deleteProduct}
-                      startEdit={startEdit}
-                      cancelEdit={cancelEdit}
                       formatPrice={formatPrice}
+                      onAddProduct={handleAddProduct}
+                      onEditProduct={handleEditProduct}
                     />
                   </div>
                 </div>
+              )}
+
+              {(activeTab === "add-product" || activeTab === "edit-product") && (
+                <AddEditProductForm
+                  formData={formData}
+                  setFormData={setFormData}
+                  editingProduct={editingProduct}
+                  addProduct={async (e: React.FormEvent) => {
+                    try {
+                      await addProduct(e);
+                      handleProductSaved();
+                    } catch (error) {
+                      console.error("Failed to add product:", error);
+                    }
+                  }}
+                  updateProduct={async (e: React.FormEvent) => {
+                    try {
+                      await updateProduct(e);
+                      handleProductSaved();
+                    } catch (error) {
+                      console.error("Failed to update product:", error);
+                    }
+                  }}
+                  cancelEdit={handleCancelEdit}
+                  loading={loading}
+                />
               )}
             </div>
           </div>
