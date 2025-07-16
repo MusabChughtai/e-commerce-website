@@ -2,13 +2,19 @@
 
 import { useState } from "react";
 
-import { BarChart3, Package, Settings, Menu, X } from "lucide-react";
+import { BarChart3, Package, Settings, Menu, X, Tag, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { useProducts } from "./hooks/useProducts";
+import { useCategories } from "./hooks/useCategories";
+import { usePolishColors } from "./hooks/usePolishColors";
 import { DashboardTab } from "./_components/DashboardTab";
 import { ProductsTab } from "./_components/ProductsTab";
+import { CategoriesTab } from "./_components/CategoriesTab";
+import { PolishColorsTab } from "./_components/PolishColorsTab";
 import { AddEditProductForm } from "./_components/AddEditProductForm";
+import { AddEditCategoryForm } from "./_components/AddEditCategoryForm";
+import { AddEditPolishColorForm } from "./_components/AddEditPolishColorForm";
 import { AdminHeader } from "./_components/AdminHeader";
 import { MobileMenu } from "./_components/MobileMenu";
 import { CartSheet } from "./_components/CartSheet";
@@ -45,7 +51,33 @@ export function AdminPortal({
     cancelEdit,
   } = useProducts();
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "add-product" | "edit-product">("dashboard");
+  const {
+    categories,
+    loading: categoriesLoading,
+    editingCategory,
+    formData: categoryFormData,
+    setFormData: setCategoryFormData,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    startEdit: startEditCategory,
+    cancelEdit: cancelEditCategory,
+  } = useCategories();
+
+  const {
+    polishColors,
+    loading: polishColorsLoading,
+    editingPolishColor,
+    formData: polishColorFormData,
+    setFormData: setPolishColorFormData,
+    addPolishColor,
+    updatePolishColor,
+    deletePolishColor,
+    startEdit: startEditPolishColor,
+    cancelEdit: cancelEditPolishColor,
+  } = usePolishColors();
+
+  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "categories" | "polish-colors" | "add-product" | "edit-product" | "add-category" | "edit-category" | "add-polish-color" | "edit-polish-color">("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleAddProduct = () => {
@@ -66,6 +98,44 @@ export function AdminPortal({
     setActiveTab("products");
   };
 
+  // Category handlers
+  const handleAddCategory = () => {
+    setActiveTab("add-category");
+  };
+
+  const handleEditCategory = (category: any) => {
+    startEditCategory(category);
+    setActiveTab("edit-category");
+  };
+
+  const handleCancelEditCategory = () => {
+    cancelEditCategory();
+    setActiveTab("categories");
+  };
+
+  const handleCategorySaved = () => {
+    setActiveTab("categories");
+  };
+
+  // Polish Color handlers
+  const handleAddPolishColor = () => {
+    setActiveTab("add-polish-color");
+  };
+
+  const handleEditPolishColor = (polishColor: any) => {
+    startEditPolishColor(polishColor);
+    setActiveTab("edit-polish-color");
+  };
+
+  const handleCancelEditPolishColor = () => {
+    cancelEditPolishColor();
+    setActiveTab("polish-colors");
+  };
+
+  const handlePolishColorSaved = () => {
+    setActiveTab("polish-colors");
+  };
+
   const menuItems = [
     {
       id: "dashboard",
@@ -76,6 +146,16 @@ export function AdminPortal({
       id: "products",
       label: "Products",
       icon: Package,
+    },
+    {
+      id: "categories",
+      label: "Categories",
+      icon: Tag,
+    },
+    {
+      id: "polish-colors",
+      label: "Polish Colors",
+      icon: Palette,
     },
   ];
 
@@ -125,9 +205,12 @@ export function AdminPortal({
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveTab(item.id as "dashboard" | "products")}
+                      onClick={() => setActiveTab(item.id as any)}
                       className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-2xl transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5 ${
-                        activeTab === item.id || (item.id === "products" && (activeTab === "add-product" || activeTab === "edit-product"))
+                        activeTab === item.id || 
+                        (item.id === "products" && (activeTab === "add-product" || activeTab === "edit-product")) ||
+                        (item.id === "categories" && (activeTab === "add-category" || activeTab === "edit-category")) ||
+                        (item.id === "polish-colors" && (activeTab === "add-polish-color" || activeTab === "edit-polish-color"))
                           ? "bg-gradient-to-r from-[#23423d] to-[#1e3b36] text-white shadow-lg"
                           : "text-gray-700 hover:bg-gradient-to-r hover:from-gray-100 hover:to-gray-50 hover:text-[#23423d]"
                       }`}
@@ -164,11 +247,14 @@ export function AdminPortal({
                     <button
                       key={item.id}
                       onClick={() => {
-                        setActiveTab(item.id as "dashboard" | "products");
+                        setActiveTab(item.id as any);
                         setIsSidebarOpen(false);
                       }}
                       className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-2xl transition-all duration-200 hover:shadow-lg transform hover:-translate-y-0.5 ${
-                        activeTab === item.id || (item.id === "products" && (activeTab === "add-product" || activeTab === "edit-product"))
+                        activeTab === item.id || 
+                        (item.id === "products" && (activeTab === "add-product" || activeTab === "edit-product")) ||
+                        (item.id === "categories" && (activeTab === "add-category" || activeTab === "edit-category")) ||
+                        (item.id === "polish-colors" && (activeTab === "add-polish-color" || activeTab === "edit-polish-color"))
                           ? "bg-gradient-to-r from-[#23423d] to-[#1e3b36] text-white shadow-lg"
                           : "text-gray-700 hover:bg-gradient-to-r hover:from-gray-100 hover:to-gray-50 hover:text-[#23423d]"
                       }`}
@@ -198,7 +284,7 @@ export function AdminPortal({
                     </div>
                   </div>
                   <div className="p-8">
-                    <DashboardTab products={products} formatPrice={formatPrice} />
+                    <DashboardTab products={products} categories={categories} formatPrice={formatPrice} />
                   </div>
                 </div>
               )}
@@ -221,6 +307,50 @@ export function AdminPortal({
                       formatPrice={formatPrice}
                       onAddProduct={handleAddProduct}
                       onEditProduct={handleEditProduct}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "categories" && (
+                <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 overflow-hidden">
+                  <div className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] px-8 py-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-white/20 rounded-2xl">
+                        <Tag className="h-6 w-6 text-white" />
+                      </div>
+                      <h1 className="text-2xl font-bold text-white">Categories</h1>
+                    </div>
+                  </div>
+                  <div className="p-8">
+                    <CategoriesTab
+                      categories={categories}
+                      loading={categoriesLoading}
+                      deleteCategory={deleteCategory}
+                      onAddCategory={handleAddCategory}
+                      onEditCategory={handleEditCategory}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "polish-colors" && (
+                <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 overflow-hidden">
+                  <div className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] px-8 py-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-white/20 rounded-2xl">
+                        <Palette className="h-6 w-6 text-white" />
+                      </div>
+                      <h1 className="text-2xl font-bold text-white">Polish Colors</h1>
+                    </div>
+                  </div>
+                  <div className="p-8">
+                    <PolishColorsTab
+                      polishColors={polishColors}
+                      loading={polishColorsLoading}
+                      deletePolishColor={deletePolishColor}
+                      onAddPolishColor={handleAddPolishColor}
+                      onEditPolishColor={handleEditPolishColor}
                     />
                   </div>
                 </div>
@@ -249,6 +379,58 @@ export function AdminPortal({
                   }}
                   cancelEdit={handleCancelEdit}
                   loading={loading}
+                />
+              )}
+
+              {(activeTab === "add-category" || activeTab === "edit-category") && (
+                <AddEditCategoryForm
+                  formData={categoryFormData}
+                  setFormData={setCategoryFormData}
+                  editingCategory={editingCategory}
+                  addCategory={async (e: React.FormEvent) => {
+                    try {
+                      await addCategory(e);
+                      handleCategorySaved();
+                    } catch (error) {
+                      console.error("Failed to add category:", error);
+                    }
+                  }}
+                  updateCategory={async (e: React.FormEvent) => {
+                    try {
+                      await updateCategory(e);
+                      handleCategorySaved();
+                    } catch (error) {
+                      console.error("Failed to update category:", error);
+                    }
+                  }}
+                  cancelEdit={handleCancelEditCategory}
+                  loading={categoriesLoading}
+                />
+              )}
+
+              {(activeTab === "add-polish-color" || activeTab === "edit-polish-color") && (
+                <AddEditPolishColorForm
+                  formData={polishColorFormData}
+                  setFormData={setPolishColorFormData}
+                  editingPolishColor={editingPolishColor}
+                  addPolishColor={async (e: React.FormEvent) => {
+                    try {
+                      await addPolishColor(e);
+                      handlePolishColorSaved();
+                    } catch (error) {
+                      console.error("Failed to add polish color:", error);
+                    }
+                  }}
+                  updatePolishColor={async (e: React.FormEvent) => {
+                    try {
+                      await updatePolishColor(e);
+                      handlePolishColorSaved();
+                    } catch (error) {
+                      console.error("Failed to update polish color:", error);
+                    }
+                  }}
+                  cancelEdit={handleCancelEditPolishColor}
+                  loading={polishColorsLoading}
                 />
               )}
             </div>

@@ -4,10 +4,11 @@ import { Eye, Package, DollarSign, TrendingUp, Users, ShoppingCart, Star, Calend
 
 interface DashboardTabProps {
   products: any[];
+  categories?: any[];
   formatPrice: (price: number) => string;
 }
 
-export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
+export function DashboardTab({ products, categories = [], formatPrice }: DashboardTabProps) {
   // Helper function to get the display price for a product
   const getProductPrice = (product: any) => {
     // Use base_price if available, otherwise try to get from variants
@@ -48,7 +49,7 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
     },
     {
       title: "Product Categories",
-      value: "4",
+      value: (categories?.length || 0).toString(),
       icon: Users,
       description: "Different product categories"
     }
@@ -115,7 +116,7 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
                   <span className="text-gray-700 font-medium">Categories</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-2xl font-bold text-gray-600">4</span>
+                  <span className="text-2xl font-bold text-gray-600">{(categories?.length || 0)}</span>
                   <span className="text-sm text-gray-500">types</span>
                 </div>
               </div>
@@ -170,7 +171,7 @@ export function DashboardTab({ products, formatPrice }: DashboardTabProps) {
               <div className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl">
                 <div>
                   <div className="text-sm text-gray-600">Total Categories</div>
-                  <div className="font-semibold text-[#23423d]">4 Active</div>
+                  <div className="font-semibold text-[#23423d]">{(categories?.length || 0)} Active</div>
                 </div>
                 <Users className="h-8 w-8 text-[#23423d]" />
               </div>

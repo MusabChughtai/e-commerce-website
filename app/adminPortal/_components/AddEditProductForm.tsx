@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { 
@@ -20,7 +21,9 @@ import {
   X,
   Upload,
   Save,
-  RotateCcw
+  RotateCcw,
+  ArrowLeft,
+  Edit3
 } from "lucide-react";
 
 // Type definitions
@@ -257,6 +260,186 @@ export function AddEditProductForm({
     }
   }, [formData.dimensions.length, formData.variants.length, setFormData]);
 
+  // Helper function to check if form is essentially empty (for new products)
+  const isFormEmpty = () => {
+    const hasName = formData.name?.trim();
+    const hasDescription = formData.description?.trim();
+    const hasCategory = formData.category_id;
+    const hasValidDimensions = formData.dimensions.some(d => 
+      d.name?.toString().trim() || d.width?.toString().trim() || d.height?.toString().trim() || d.depth?.toString().trim() || d.length?.toString().trim() || d.price?.toString().trim()
+    );
+    const hasPolishColors = formData.polish_color_ids.length > 0;
+    const hasValidVariants = formData.variants.some(v => v.dimensionId || v.polishColorId);
+    const hasImages = Object.keys(formData.images).some(key => 
+      key !== 'primaryIndices' && formData.images[key]?.length > 0
+    );
+
+    return !hasName && !hasDescription && !hasCategory && !hasValidDimensions && 
+           !hasPolishColors && !hasValidVariants && !hasImages;
+  };
+
+  // Helper function to check if form has changes (for editing)
+  const hasFormChanges = () => {
+    if (!editingProduct) return false;
+
+    // Check basic fields
+    if (formData.name?.trim() !== editingProduct.name?.trim()) return true;
+    if (formData.description?.trim() !== editingProduct.description?.trim()) return true;
+    if (formData.category_id !== editingProduct.category_id) return true;
+
+    // Check dimensions changes
+    if (editingProduct.product_variants && editingProduct.product_variants.length > 0) {
+      const originalDimensions = editingProduct.product_variants.map((v: any) => ({
+        name: v.dimension_name || "",
+        width: v.width?.toString() || "",
+        height: v.height?.toString() || "",
+        depth: v.depth?.toString() || "",
+        length: v.length?.toString() || "",
+        price: v.price?.toString() || ""
+      }));
+
+      if (formData.dimensions.length !== originalDimensions.length) return true;
+      
+      for (let i = 0; i < formData.dimensions.length; i++) {
+        const current = formData.dimensions[i];
+        const original = originalDimensions[i] || { name: "", width: "", height: "", depth: "", length: "", price: "" };
+        
+        if (current.name?.toString().trim() !== original.name?.toString().trim()) return true;
+        if (current.width?.toString().trim() !== original.width?.toString().trim()) return true;
+        if (current.height?.toString().trim() !== original.height?.toString().trim()) return true;
+        if (current.depth?.toString().trim() !== original.depth?.toString().trim()) return true;
+        if (current.length?.toString().trim() !== original.length?.toString().trim()) return true;
+        if (current.price?.toString().trim() !== original.price?.toString().trim()) return true;
+      }
+    } else if (formData.dimensions.some(d => 
+      d.name?.toString().trim() || d.width?.toString().trim() || d.height?.toString().trim() || d.depth?.toString().trim() || d.length?.toString().trim() || d.price?.toString().trim()
+    )) {
+      return true;
+    }
+
+    // Check polish colors changes
+    const originalPolishColorIds = editingProduct.available_colors?.map((c: any) => c.id) || [];
+    const currentPolishColorIds = [...formData.polish_color_ids].sort();
+    const originalPolishColorIdsSorted = [...originalPolishColorIds].sort();
+    
+    if (currentPolishColorIds.length !== originalPolishColorIdsSorted.length) return true;
+    if (!currentPolishColorIds.every((id, index) => id === originalPolishColorIdsSorted[index])) return true;
+
+    // Check variants changes
+    if (editingProduct.product_variants && editingProduct.product_variants.length > 0) {
+      const originalVariants = editingProduct.product_variants.map((v: any, index: number) => ({
+        dimensionId: index.toString(),
+        polishColorId: v.polish_color_id || ""
+      }));
+
+      if (formData.variants.length !== originalVariants.length) return true;
+      
+      for (let i = 0; i < formData.variants.length; i++) {
+        const current = formData.variants[i];
+        const original = originalVariants[i] || { dimensionId: "", polishColorId: "" };
+        
+        if (current.dimensionId !== original.dimensionId) return true;
+        if (current.polishColorId !== original.polishColorId) return true;
+      }
+    } else if (formData.variants.some(v => v.dimensionId || v.polishColorId)) {
+      return true;
+    }
+
+    // Check if any new images were added
+    const hasNewImages = Object.keys(formData.images).some(key => 
+      key !== 'primaryIndices' && formData.images[key]?.length > 0
+    );
+    if (hasNewImages) return true;
+
+    // Check if any existing images were removed or primary status changed
+    if (editingProduct.product_images) {
+      const originalImageIds = editingProduct.product_images.map((img: any) => img.id);
+      const currentImageIds = Object.values(existingImagePreviews).flat().map(img => img.id);
+      if (originalImageIds.length !== currentImageIds.length) return true;
+      if (!originalImageIds.every((id: string) => currentImageIds.includes(id))) return true;
+
+      // Check if primary image status changed
+      for (const polishColorId of Object.keys(existingImagePreviews)) {
+        const originalImages = editingProduct.product_images.filter((img: any) => img.polish_color_id === polishColorId);
+        const currentImages = existingImagePreviews[polishColorId];
+        
+        for (let i = 0; i < currentImages.length; i++) {
+          const currentImg = currentImages[i];
+          const originalImg = originalImages.find((img: any) => img.id === currentImg.id);
+          if (originalImg && originalImg.is_primary !== currentImg.is_primary) return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  // Check if form is valid for submission (all required fields filled)
+  const isFormValid = () => {
+    // Basic required fields
+    const hasName = formData.name?.trim();
+    const hasCategory = formData.category_id;
+    
+    if (!hasName || !hasCategory) return false;
+
+    // At least one dimension with all required fields filled
+    const hasValidDimensions = formData.dimensions.some(d => 
+      d.name?.toString().trim() && 
+      d.width?.toString().trim() && 
+      d.height?.toString().trim() && 
+      d.depth?.toString().trim() && 
+      d.length?.toString().trim() && 
+      d.price?.toString().trim()
+    );
+    
+    if (!hasValidDimensions) return false;
+
+    // At least one polish color selected
+    const hasPolishColors = formData.polish_color_ids.length > 0;
+    
+    if (!hasPolishColors) return false;
+
+    // At least one valid variant
+    const hasValidVariants = formData.variants.some(v => v.dimensionId && v.polishColorId);
+    
+    if (!hasValidVariants) return false;
+
+    return true;
+  };
+
+  // Get form validation error message
+  const getFormValidationMessage = () => {
+    const missingFields = [];
+    
+    if (!formData.name?.trim()) missingFields.push("Product Name");
+    if (!formData.category_id) missingFields.push("Category");
+    
+    const hasValidDimensions = formData.dimensions.some(d => 
+      d.name?.toString().trim() && 
+      d.width?.toString().trim() && 
+      d.height?.toString().trim() && 
+      d.depth?.toString().trim() && 
+      d.length?.toString().trim() && 
+      d.price?.toString().trim()
+    );
+    if (!hasValidDimensions) missingFields.push("At least one complete dimension (name, width, height, depth, length, price)");
+    
+    if (formData.polish_color_ids.length === 0) missingFields.push("At least one polish color");
+    
+    const hasValidVariants = formData.variants.some(v => v.dimensionId && v.polishColorId);
+    if (!hasValidVariants) missingFields.push("At least one valid variant (dimension + polish color)");
+    
+    if (missingFields.length === 0) return "";
+    
+    if (missingFields.length === 1) {
+      return `Please fill in: ${missingFields[0]}`;
+    } else if (missingFields.length === 2) {
+      return `Please fill in: ${missingFields[0]} and ${missingFields[1]}`;
+    } else {
+      return `Please fill in: ${missingFields.slice(0, -1).join(", ")}, and ${missingFields[missingFields.length - 1]}`;
+    }
+  };
+
   // === DIMENSIONS ===
   const handleDimensionChange = (index: number, field: keyof Dimension, value: string) => {
     const dims = [...formData.dimensions];
@@ -443,7 +626,6 @@ export function AddEditProductForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Form submitted:", { editingProduct }); // Debug log
     
     const config = editingProduct 
       ? {
@@ -484,8 +666,13 @@ export function AddEditProductForm({
   };
 
   const handleCancel = () => {
-    console.log("Cancel button clicked"); // Debug log
-    
+    // For new products, if form is empty, just go back without confirmation
+    if (!editingProduct && isFormEmpty()) {
+      cancelEdit();
+      return;
+    }
+
+    // Show confirmation modal for any changes (new product) or always for editing
     const config = {
       type: 'discard' as const,
       title: 'Discard Changes',
@@ -503,8 +690,6 @@ export function AddEditProductForm({
   };
 
   const handleReset = () => {
-    console.log("Reset button clicked"); // Debug log
-    
     const config = {
       type: 'reset' as const,
       title: 'Reset Form',
@@ -538,27 +723,51 @@ export function AddEditProductForm({
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100 p-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] px-8 py-8">
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-white/20 rounded-2xl">
-                  <Package className="w-8 h-8 text-white" />
-                </div>
-                <h2 className="text-3xl font-bold text-white">
-                  {editingProduct ? "Edit Product" : "Add New Product"}
-                </h2>
+      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-white/20 rounded-2xl">
+                {editingProduct ? (
+                  <Edit3 className="h-6 w-6 text-white" />
+                ) : (
+                  <Plus className="h-6 w-6 text-white" />
+                )}
               </div>
+              <h1 className="text-2xl font-bold text-white">
+                {editingProduct ? "Edit Product" : "Add New Product"}
+              </h1>
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancel}
+              className="text-white hover:bg-white/20 transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5 mr-2" />
+              Back
+            </Button>
+          </div>
+        </div>
 
-            <form onSubmit={handleSubmit} className="p-8 space-y-10">
+        <div className="p-8">
+          <Card className="border-gray-200/50 shadow-lg">
+            <CardHeader className="pb-6">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-gradient-to-r from-[#23423d]/10 to-[#1e3b36]/10 rounded-2xl">
+                  <Package className="h-5 w-5 text-[#23423d]" />
+                </div>
+                <CardTitle className="text-[#23423d]">Product Information</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-6">
               {/* Basic Information */}
-              <div className="grid md:grid-cols-2 gap-8">
+              <div className="grid md:grid-cols-2 gap-6">
                 {/* NAME */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                     <Package className="w-4 h-4 text-[#23423d]" />
                     Product Name
                   </Label>
@@ -569,14 +778,14 @@ export function AddEditProductForm({
                       name: e.target.value
                     }))}
                     required
-                    className="h-14 border-gray-200 rounded-2xl focus:border-[#23423d] focus:ring-[#23423d] shadow-sm bg-white/50"
+                    className="border-gray-200 focus:border-[#23423d] focus:ring-[#23423d]/20"
                     placeholder="e.g., Modern Oak Dining Table"
                   />
                 </div>
 
                 {/* CATEGORY */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                     <Tag className="w-4 h-4 text-[#23423d]" />
                     Category
                   </Label>
@@ -588,7 +797,7 @@ export function AddEditProductForm({
                         category_id: e.target.value
                       }))
                     }
-                    className="w-full h-14 border border-gray-200 rounded-2xl px-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 bg-white/50 shadow-sm"
+                    className="w-full border border-gray-200 rounded px-3 py-2 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20"
                   >
                     <option value="">Select a category for your product</option>
                     {categories.map((c) => (
@@ -601,8 +810,8 @@ export function AddEditProductForm({
               </div>
 
               {/* DESCRIPTION */}
-              <div className="space-y-3">
-                <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                   <FileText className="w-4 h-4 text-[#23423d]" />
                   Description
                 </Label>
@@ -614,16 +823,17 @@ export function AddEditProductForm({
                       description: e.target.value
                     }))
                   }
-                  className="w-full h-28 border border-gray-200 rounded-2xl px-4 py-4 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 resize-none bg-white/50 shadow-sm"
+                  className="w-full border border-gray-200 rounded px-3 py-2 focus:border-[#23423d] focus:ring-2 focus:ring-[#23423d]/20 resize-none"
+                  rows={4}
                   placeholder="Describe your product's features, materials, and craftsmanship details..."
                 />
               </div>
 
               {/* DIMENSIONS */}
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2 text-xl font-bold text-gray-800">
-                    <Ruler className="w-6 h-6 text-[#23423d]" />
+                  <Label className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+                    <Ruler className="w-5 h-5 text-[#23423d]" />
                     Dimensions
                   </Label>
                   <Button 
@@ -746,13 +956,13 @@ export function AddEditProductForm({
               </div>
 
               {/* POLISH COLORS */}
-              <div className="space-y-6">
-                <Label className="flex items-center gap-2 text-xl font-bold text-gray-800">
-                  <Palette className="w-6 h-6 text-[#23423d]" />
+              <div className="space-y-4">
+                <Label className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+                  <Palette className="w-5 h-5 text-[#23423d]" />
                   Polish Colors
                 </Label>
-                <p className="text-sm text-gray-600 mb-6">Select the available polish colors for this product</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <p className="text-sm text-gray-600 mb-4">Select the available polish colors for this product</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {polishColors.map((c) => (
                     <label 
                       key={c.id} 
@@ -783,10 +993,10 @@ export function AddEditProductForm({
               </div>
 
               {/* VARIANTS */}
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2 text-xl font-bold text-gray-800">
-                    <Grid className="w-6 h-6 text-[#23423d]" />
+                  <Label className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+                    <Grid className="w-5 h-5 text-[#23423d]" />
                     Variants (Dimension × Polish Color)
                   </Label>
                   <Button 
@@ -866,13 +1076,13 @@ export function AddEditProductForm({
               {formData.polish_color_ids.map((pid) => {
                 const polish = polishColors.find((c) => c.id === pid);
                 return (
-                  <div key={pid} className="space-y-6">
-                    <Label className="flex items-center gap-3 text-xl font-bold text-gray-800">
-                      <ImageIcon className="w-6 h-6 text-[#23423d]" />
+                  <div key={pid} className="space-y-4">
+                    <Label className="flex items-center gap-3 text-lg font-semibold text-gray-800">
+                      <ImageIcon className="w-5 h-5 text-[#23423d]" />
                       <span>Images for</span>
                       {polish?.hex_code && (
                         <div 
-                          className="w-6 h-6 rounded-full border-2 border-gray-300 shadow-md"
+                          className="w-5 h-5 rounded-full border-2 border-gray-300 shadow-md"
                           style={{ backgroundColor: polish.hex_code }}
                         />
                       )}
@@ -895,7 +1105,7 @@ export function AddEditProductForm({
                         <div className="p-6 bg-white rounded-3xl shadow-lg mb-8">
                           <Upload className="w-16 h-16 text-[#23423d]" />
                         </div>
-                        <h3 className="text-xl font-bold text-gray-800 mb-3">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">
                           Upload images for {polish?.name} finish
                         </h3>
                         <p className="text-gray-600 mb-2">
@@ -1027,51 +1237,43 @@ export function AddEditProductForm({
                 );
               })}
 
-              {/* Submit Buttons - Enhanced and Centered */}
-              <div className="flex flex-col sm:flex-row gap-6 pt-12 border-t border-gray-200 justify-center items-center">
+              {/* Submit Buttons */}
+              <div className="flex gap-4 pt-4">
                 <Button 
                   type="submit"
-                  disabled={loading}
-                  className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] hover:from-[#1e3b36] hover:to-[#192e2a] text-white px-12 py-6 rounded-3xl font-bold text-lg shadow-2xl hover:shadow-3xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  disabled={loading || !isFormValid()}
+                  className="flex-1 bg-gradient-to-r from-[#23423d] to-[#1e3b36] hover:from-[#1e3b36] hover:to-[#1a332e] text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
                   {loading ? (
-                    <>
-                      <div className="animate-spin h-6 w-6 border-b-2 border-white rounded-full mr-3"></div>
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                       {editingProduct ? "Updating..." : "Adding..."}
-                    </>
+                    </div>
                   ) : (
                     <>
-                      <Save className="w-6 h-6 mr-3 group-hover:rotate-12 transition-transform" />
+                      {editingProduct ? (
+                        <Edit3 className="h-4 w-4 mr-2" />
+                      ) : (
+                        <Plus className="h-4 w-4 mr-2" />
+                      )}
                       {editingProduct ? "Update Product" : "Add Product"}
                     </>
                   )}
                 </Button>
-                {/* Only show Reset button when adding new product (not editing) */}
-                {!editingProduct && (
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={handleReset}
-                    disabled={loading}
-                    className="border-2 border-orange-300 hover:border-orange-400 bg-white hover:bg-orange-50 text-orange-700 hover:text-orange-900 px-12 py-6 rounded-3xl font-bold text-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  >
-                    <RotateCcw className="w-6 h-6 mr-3 group-hover:-rotate-12 transition-transform" />
-                    Reset Form
-                  </Button>
-                )}
                 <Button 
                   type="button" 
                   variant="outline" 
                   onClick={handleCancel}
                   disabled={loading}
-                  className="border-2 border-gray-300 hover:border-gray-400 bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 px-12 py-6 rounded-3xl font-bold text-lg shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-2 hover:scale-105 min-w-[200px] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  className="flex-1 border-gray-200 text-gray-700 hover:bg-gray-50"
                 >
-                  <X className="w-6 h-6 mr-3 group-hover:rotate-12 transition-transform" />
+                  <ArrowLeft className="h-4 w-4 mr-2" />
                   Cancel
                 </Button>
               </div>
             </form>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
