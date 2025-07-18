@@ -2,28 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Settings, Menu, Shield } from "lucide-react";
 
 interface AdminHeaderProps {
-  isAccountOpen: boolean;
-  setIsAccountOpen: (open: boolean) => void;
-  isCartOpen: boolean;
-  setIsCartOpen: (open: boolean) => void;
-  getTotalItems: () => number;
-  onNavigateHome: () => void;
-  onNavigateProducts: () => void;
-  onNavigateServices: () => void;
-  setIsMobileMenuOpen: (open: boolean) => void;
   onToggleSidebar: () => void;
 }
 
 export function AdminHeader({
-  isAccountOpen,
-  setIsAccountOpen,
-  isCartOpen,
-  setIsCartOpen,
-  getTotalItems,
-  onNavigateHome,
-  onNavigateProducts,
-  onNavigateServices,
-  setIsMobileMenuOpen,
   onToggleSidebar,
 }: AdminHeaderProps) {
   return (

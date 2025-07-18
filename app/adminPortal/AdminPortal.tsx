@@ -19,27 +19,12 @@ import { AddEditCategoryForm } from "./_components/AddEditCategoryForm";
 import { AddEditPolishColorForm } from "./_components/AddEditPolishColorForm";
 import { AddEditDiscountForm } from "./_components/AddEditDiscountForm";
 import { AdminHeader } from "./_components/AdminHeader";
-import { MobileMenu } from "./_components/MobileMenu";
-import { CartSheet } from "./_components/CartSheet";
+
 
 import { AdminPortalProps } from "./types";
 
 export function AdminPortal({
-  onBack,
-  cartItems,
-  isCartOpen,
-  setIsCartOpen,
-  updateCartQuantity,
-  getTotalPrice,
-  getTotalItems,
-  isAccountOpen,
-  setIsAccountOpen,
   formatPrice,
-  isMobileMenuOpen,
-  setIsMobileMenuOpen,
-  onNavigateHome,
-  onNavigateProducts,
-  onNavigateServices,
 }: AdminPortalProps) {
   const {
     products,
@@ -206,35 +191,7 @@ export function AdminPortal({
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100">
       {/* Header */}
       <AdminHeader
-        isAccountOpen={isAccountOpen}
-        setIsAccountOpen={setIsAccountOpen}
-        isCartOpen={isCartOpen}
-        setIsCartOpen={setIsCartOpen}
-        getTotalItems={getTotalItems}
-        onNavigateHome={onNavigateHome}
-        onNavigateProducts={onNavigateProducts}
-        onNavigateServices={onNavigateServices}
-        setIsMobileMenuOpen={(open) => setIsMobileMenuOpen?.(open)}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-      />
-
-      {/* Mobile Menu */}
-      <MobileMenu
-        isOpen={!!isMobileMenuOpen}
-        setIsOpen={(open) => setIsMobileMenuOpen?.(open)}
-        onNavigateHome={onNavigateHome}
-        onNavigateProducts={onNavigateProducts}
-        onNavigateServices={onNavigateServices}
-      />
-
-      {/* Cart Sidebar */}
-      <CartSheet
-        isOpen={isCartOpen}
-        setIsOpen={setIsCartOpen}
-        cartItems={cartItems}
-        updateCartQuantity={updateCartQuantity}
-        getTotalPrice={getTotalPrice}
-        formatPrice={formatPrice}
       />
 
       <div className="flex">
