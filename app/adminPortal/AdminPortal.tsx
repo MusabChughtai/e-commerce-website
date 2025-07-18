@@ -307,6 +307,7 @@ export function AdminPortal({
                       formatPrice={formatPrice}
                       onAddProduct={handleAddProduct}
                       onEditProduct={handleEditProduct}
+                      discounts={discounts}
                     />
                   </div>
                 </div>
