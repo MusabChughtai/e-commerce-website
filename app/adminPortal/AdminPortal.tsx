@@ -2,19 +2,22 @@
 
 import { useState } from "react";
 
-import { BarChart3, Package, Settings, Menu, X, Tag, Palette } from "lucide-react";
+import { BarChart3, Package, Settings, Menu, X, Tag, Palette, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { useProducts } from "./hooks/useProducts";
 import { useCategories } from "./hooks/useCategories";
 import { usePolishColors } from "./hooks/usePolishColors";
+import { useDiscounts } from "./hooks/useDiscounts";
 import { DashboardTab } from "./_components/DashboardTab";
 import { ProductsTab } from "./_components/ProductsTab";
 import { CategoriesTab } from "./_components/CategoriesTab";
 import { PolishColorsTab } from "./_components/PolishColorsTab";
+import { DiscountsTab } from "./_components/DiscountsTab";
 import { AddEditProductForm } from "./_components/AddEditProductForm";
 import { AddEditCategoryForm } from "./_components/AddEditCategoryForm";
 import { AddEditPolishColorForm } from "./_components/AddEditPolishColorForm";
+import { AddEditDiscountForm } from "./_components/AddEditDiscountForm";
 import { AdminHeader } from "./_components/AdminHeader";
 import { MobileMenu } from "./_components/MobileMenu";
 import { CartSheet } from "./_components/CartSheet";
@@ -77,7 +80,22 @@ export function AdminPortal({
     cancelEdit: cancelEditPolishColor,
   } = usePolishColors();
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "categories" | "polish-colors" | "add-product" | "edit-product" | "add-category" | "edit-category" | "add-polish-color" | "edit-polish-color">("dashboard");
+  const {
+    discounts,
+    loading: discountsLoading,
+    editingDiscount,
+    formData: discountFormData,
+    categories: discountCategories,
+    products: discountProducts,
+    addDiscount,
+    updateDiscount,
+    deleteDiscount,
+    startEditing: startEditDiscount,
+    resetForm: resetDiscountForm,
+    updateFormData: updateDiscountFormData,
+  } = useDiscounts();
+
+  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "categories" | "polish-colors" | "discounts" | "add-product" | "edit-product" | "add-category" | "edit-category" | "add-polish-color" | "edit-polish-color" | "add-discount" | "edit-discount">("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleAddProduct = () => {
@@ -136,6 +154,26 @@ export function AdminPortal({
     setActiveTab("polish-colors");
   };
 
+  // Discount handlers
+  const handleAddDiscount = () => {
+    resetDiscountForm();
+    setActiveTab("add-discount");
+  };
+
+  const handleEditDiscount = (discount: any) => {
+    startEditDiscount(discount);
+    setActiveTab("edit-discount");
+  };
+
+  const handleCancelEditDiscount = () => {
+    resetDiscountForm();
+    setActiveTab("discounts");
+  };
+
+  const handleDiscountSaved = () => {
+    setActiveTab("discounts");
+  };
+
   const menuItems = [
     {
       id: "dashboard",
@@ -156,6 +194,11 @@ export function AdminPortal({
       id: "polish-colors",
       label: "Polish Colors",
       icon: Palette,
+    },
+    {
+      id: "discounts",
+      label: "Discounts",
+      icon: Percent,
     },
   ];
 
@@ -284,7 +327,7 @@ export function AdminPortal({
                     </div>
                   </div>
                   <div className="p-8">
-                    <DashboardTab products={products} categories={categories} formatPrice={formatPrice} />
+                    <DashboardTab products={products} formatPrice={formatPrice} />
                   </div>
                 </div>
               )}
@@ -351,6 +394,25 @@ export function AdminPortal({
                       deletePolishColor={deletePolishColor}
                       onAddPolishColor={handleAddPolishColor}
                       onEditPolishColor={handleEditPolishColor}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "discounts" && (
+                <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 overflow-hidden">
+                  <div className="bg-gradient-to-r from-[#23423d] to-[#1e3b36] px-8 py-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-white/20 rounded-2xl">
+                        <Percent className="h-6 w-6 text-white" />
+                      </div>
+                      <h1 className="text-2xl font-bold text-white">Discounts</h1>
+                    </div>
+                  </div>
+                  <div className="p-8">
+                    <DiscountsTab 
+                      onAddDiscount={handleAddDiscount}
+                      onEditDiscount={handleEditDiscount}
                     />
                   </div>
                 </div>
@@ -431,6 +493,30 @@ export function AdminPortal({
                   }}
                   cancelEdit={handleCancelEditPolishColor}
                   loading={polishColorsLoading}
+                />
+              )}
+
+              {(activeTab === "add-discount" || activeTab === "edit-discount") && (
+                <AddEditDiscountForm
+                  formData={discountFormData}
+                  updateFormData={updateDiscountFormData}
+                  onSubmit={async (e: React.FormEvent) => {
+                    try {
+                      if (editingDiscount) {
+                        await updateDiscount(e);
+                      } else {
+                        await addDiscount(e);
+                      }
+                      handleDiscountSaved();
+                    } catch (error) {
+                      console.error("Failed to save discount:", error);
+                    }
+                  }}
+                  onCancel={handleCancelEditDiscount}
+                  loading={discountsLoading}
+                  editingDiscount={editingDiscount}
+                  categories={discountCategories}
+                  products={discountProducts}
                 />
               )}
             </div>
