@@ -29,7 +29,6 @@ import { ProductDetail } from "./components/product-detail"
 import { CheckoutPage } from "./components/checkout-page"
 import { AccountModal } from "./components/account-modal"
 import { ServicesPage } from "./components/services-page"
-import { AdminPortal } from "./components/admin-portal"
 import { supabase, type Product } from "@/lib/supabase"
 
 interface CartItem {
@@ -159,28 +158,6 @@ export default function EastCraftsWebsite() {
     fullDescription: product.full_description,
     dimensions: product.dimensions,
   })
-
-  if (currentView === "admin") {
-    return (
-      <AdminPortal
-        onBack={() => setCurrentView("home")}
-        cartItems={cartItems}
-        isCartOpen={isCartOpen}
-        setIsCartOpen={setIsCartOpen}
-        updateCartQuantity={updateCartQuantity}
-        getTotalPrice={getTotalPrice}
-        getTotalItems={getTotalItems}
-        isAccountOpen={isAccountOpen}
-        setIsAccountOpen={setIsAccountOpen}
-        formatPrice={formatPrice}
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-        onNavigateHome={() => setCurrentView("home")}
-        onNavigateProducts={() => setCurrentView("products")}
-        onNavigateServices={() => setCurrentView("services")}
-      />
-    )
-  }
 
   if (currentView === "services") {
     return (
@@ -320,13 +297,6 @@ export default function EastCraftsWebsite() {
                 style={{ fontFamily: "serif" }}
               >
                 SERVICES
-              </button>
-              <button
-                onClick={() => setCurrentView("admin")}
-                className="text-[#f4d03f] hover:text-[#f7dc6f] font-medium transition-colors"
-                style={{ fontFamily: "serif" }}
-              >
-                ADMIN
               </button>
             </nav>
 
