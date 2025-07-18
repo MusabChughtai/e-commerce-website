@@ -26,7 +26,9 @@ import {
   CheckCircle,
   Copy,
   Eye,
-  BarChart3
+  BarChart3,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { useDiscounts } from "../hooks/useDiscounts";
@@ -50,16 +52,30 @@ export function DiscountsTab({ onAddDiscount, onEditDiscount }: DiscountsTabProp
   const [filterType, setFilterType] = useState<"all" | "percent" | "money" | "free_shipping" | "coupon">("all");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [discountToDelete, setDiscountToDelete] = useState<Discount | null>(null);
+  const [expandedProductLists, setExpandedProductLists] = useState<Set<string>>(new Set());
 
   const getCouponInfo = (discount: Discount) => {
     if (discount.discount_type === 'coupon') {
-      const couponData = (discount as any).discount_coupons?.[0];
-      return {
-        code: couponData?.coupon_code || '',
-        discountType: couponData?.coupon_discount_type || 'percent',
-        usageLimit: couponData?.usage_limit,
-        usageCount: couponData?.usage_count || 0
-      };
+      const couponData = (discount as any).discount_coupons;
+      
+      let coupon = null;
+      // Check if coupon data is an array
+      if (Array.isArray(couponData) && couponData.length > 0) {
+        coupon = couponData[0];
+      }
+      // Check if coupon data is a single object
+      else if (couponData && typeof couponData === 'object') {
+        coupon = couponData;
+      }
+      
+      if (coupon) {
+        return {
+          code: coupon.coupon_code || '',
+          discountType: coupon.coupon_discount_type || 'percent',
+          usageLimit: coupon.usage_limit,
+          usageCount: coupon.usage_count || 0
+        };
+      }
     }
     return null;
   };
@@ -118,12 +134,24 @@ export function DiscountsTab({ onAddDiscount, onEditDiscount }: DiscountsTabProp
   const formatDiscountValue = (discount: Discount) => {
     // Handle coupon discounts
     if (discount.discount_type === 'coupon') {
-      const couponData = (discount as any).discount_coupons?.[0];
-      if (couponData && couponData.discount_value !== undefined) {
+      const couponData = (discount as any).discount_coupons;
+      
+      // Check if coupon data is an array
+      if (Array.isArray(couponData) && couponData.length > 0) {
+        const coupon = couponData[0];
+        if (coupon && coupon.discount_value !== undefined) {
+          const value = coupon.discount_value;
+          const type = coupon.coupon_discount_type;
+          return type === 'percent' ? `${value}%` : `₨${value}`;
+        }
+      }
+      // Check if coupon data is a single object
+      else if (couponData && typeof couponData === 'object' && couponData.discount_value !== undefined) {
         const value = couponData.discount_value;
         const type = couponData.coupon_discount_type;
         return type === 'percent' ? `${value}%` : `₨${value}`;
       }
+      
       return "No coupon data";
     }
     
@@ -220,6 +248,16 @@ export function DiscountsTab({ onAddDiscount, onEditDiscount }: DiscountsTabProp
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  const toggleProductList = (discountId: string) => {
+    const newExpanded = new Set(expandedProductLists);
+    if (newExpanded.has(discountId)) {
+      newExpanded.delete(discountId);
+    } else {
+      newExpanded.add(discountId);
+    }
+    setExpandedProductLists(newExpanded);
   };
 
   // Statistics
@@ -398,35 +436,41 @@ export function DiscountsTab({ onAddDiscount, onEditDiscount }: DiscountsTabProp
             return (
               <Card key={discount.id} className="group hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border-gray-200/60 bg-white/80 backdrop-blur-sm">
                 <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-gradient-to-r from-[#23423d]/10 to-[#1e3b36]/10 rounded-2xl">
-                        {getDiscountIcon(discount.discount_type)}
+                  <div className="relative mb-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start space-x-4 flex-1 min-w-0">
+                        <div className="relative flex-shrink-0">
+                          <div className="p-3 bg-gradient-to-br from-[#23423d] to-[#1e3b36] rounded-2xl shadow-lg transform transition-transform group-hover:scale-105">
+                            <div className="text-white">
+                              {getDiscountIcon(discount.discount_type)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="h-12 flex items-center justify-center">
+                            <h3 className="font-bold text-gray-900 text-xl group-hover:text-[#23423d] transition-all duration-300 tracking-tight leading-6 line-clamp-2 text-center">
+                              {discount.name}
+                            </h3>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900 text-lg group-hover:text-[#23423d] transition-colors">
-                          {discount.name}
-                        </h3>
-                        <Badge className={`${status.color} text-white text-xs px-2 py-1 mt-1`}>
-                          {status.label}
-                        </Badge>
+                      <div className="flex-shrink-0">
+                        <Switch
+                          checked={discount.is_active}
+                          onCheckedChange={(checked) => toggleDiscountStatus(discount.id, checked)}
+                          disabled={loading}
+                          className="data-[state=checked]:bg-[#23423d]"
+                        />
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={discount.is_active}
-                        onCheckedChange={(checked) => toggleDiscountStatus(discount.id, checked)}
-                        disabled={loading}
-                      />
+                    <hr className="my-4 border-gray-200" />
+                    <div className="mb-4">
+                      <Badge className={`${status.color} text-white text-xs px-3 py-1 rounded-full font-medium shadow-sm w-full text-center justify-center`}>
+                        {status.label}
+                      </Badge>
                     </div>
                   </div>
                   
-                  {discount.description && (
-                    <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                      {discount.description}
-                    </p>
-                  )}
-
                   <div className="space-y-3 mb-4">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Calendar className="h-4 w-4" />
@@ -463,183 +507,219 @@ export function DiscountsTab({ onAddDiscount, onEditDiscount }: DiscountsTabProp
                           </span>
                         </div>
                       );
-                    })()}
-
-                    {discount.discount_type === 'coupon' && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <BarChart3 className="h-4 w-4" />
-                        <span>
-                          {(() => {
-                            const couponInfo = getCouponInfo(discount);
-                            if (couponInfo) {
-                              const remaining = couponInfo.usageLimit ? couponInfo.usageLimit - couponInfo.usageCount : null;
-                              return `${couponInfo.usageCount}${couponInfo.usageLimit ? ` / ${couponInfo.usageLimit}` : ""} uses${remaining ? ` (${remaining} remaining)` : ""}`;
-                            }
-                            return "0 uses";
-                          })()}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Show coupon code for coupon discounts */}
-                    {discount.discount_type === 'coupon' && (() => {
-                      const couponInfo = getCouponInfo(discount);
-                      return couponInfo ? (
-                        <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-medium text-blue-800">Coupon Code:</p>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyToClipboard(couponInfo.code)}
-                              className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-100"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </div>
-                          <Badge variant="outline" className="text-sm font-mono bg-blue-100 border-blue-300 text-blue-800 mb-2">
-                            {couponInfo.code}
-                          </Badge>
-                          <div className="grid grid-cols-2 gap-2 text-xs text-blue-700">
-                            <div>
-                              <span className="font-medium">Type:</span> {couponInfo.discountType === 'percent' ? 'Percentage' : 'Fixed Amount'}
-                            </div>
-                            {couponInfo.usageLimit && (
-                              <div>
-                                <span className="font-medium">Limit:</span> {couponInfo.usageLimit}
-                              </div>
-                            )}
-                          </div>
-                          {couponInfo.usageLimit && (
-                            <div className="mt-2">
-                              <div className="flex justify-between text-xs text-blue-700 mb-1">
-                                <span>Usage Progress</span>
-                                <span>{couponInfo.usageCount} / {couponInfo.usageLimit}</span>
-                              </div>
-                              <div className="w-full bg-blue-200 rounded-full h-2">
-                                <div 
-                                  className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                                  style={{ width: `${(couponInfo.usageCount / couponInfo.usageLimit) * 100}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : null;
-                    })()}
+                    })(                    )}
 
                     {/* Show discount value */}
-                    <div className="p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                    <div className="p-3 bg-gradient-to-r from-[#23423d]/5 to-[#1e3b36]/5 rounded-lg border border-[#23423d]/20">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-medium text-green-800">Discount Value:</p>
+                        <p className="text-xs font-medium text-[#23423d]">Discount Type:</p>
                         <div className="flex items-center gap-1">
                           {getDiscountIcon(discount.discount_type)}
-                          <span className="text-xs text-green-700 capitalize">
+                          <span className="text-xs text-[#23423d]/80 capitalize">
                             {discount.discount_type.replace('_', ' ')}
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xl font-bold text-green-700">
-                          {formatDiscountValue(discount)}
-                        </span>
-                        {discount.discount_type === 'free_shipping' && (
-                          <Badge className="bg-green-100 text-green-800 border-green-300">
-                            <Truck className="h-3 w-3 mr-1" />
-                            Free Shipping
-                          </Badge>
-                        )}
-                      </div>
+                      {discount.discount_type !== 'free_shipping' && discount.scope === 'all_items' && (
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xl font-bold text-[#23423d]">
+                            {formatDiscountValue(discount)}
+                          </span>
+                        </div>
+                      )}
                       
                       {/* Show additional details based on discount type */}
                       {discount.scope === 'all_items' && discount.discount_type !== 'free_shipping' && (
-                        <div className="mt-2 text-xs text-green-700">
+                        <div className="mt-2 text-xs text-[#23423d]/80">
                           <span className="font-medium">Applies to:</span> All items in store
+                        </div>
+                      )}
+                      
+                      {discount.scope === 'categories' && discountCategories.length > 0 && discount.discount_type !== 'free_shipping' && (
+                        <div className="mt-2">
+                          <button
+                            onClick={() => toggleProductList(discount.id)}
+                            className="flex items-center justify-between w-full text-xs text-[#23423d]/80 hover:text-[#23423d] transition-colors"
+                          >
+                            <span className="font-medium">
+                              Applies to: {discountCategories.length} categor{discountCategories.length !== 1 ? 'ies' : 'y'}
+                            </span>
+                            {expandedProductLists.has(discount.id) ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )}
+                          </button>
+                          
+                          {expandedProductLists.has(discount.id) && (
+                            <div className="mt-2 max-h-32 overflow-y-auto border border-[#23423d]/20 rounded-lg bg-white/50">
+                              {discountCategories.map((dc: any, index: number) => (
+                                <div 
+                                  key={dc.id || index} 
+                                  className="flex items-center justify-between px-3 py-2 border-b border-[#23423d]/10 last:border-b-0 text-xs"
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-[#23423d] truncate">
+                                      {dc.categories?.name || 'Unknown Category'}
+                                    </div>
+                                  </div>
+                                  <div className="ml-2 flex-shrink-0">
+                                    <Badge variant="outline" className="text-xs bg-[#23423d]/5 border-[#23423d]/30 text-[#23423d]">
+                                      {discount.discount_type === 'percent' ? `${dc.discount_value}%` : `₨${dc.discount_value}`}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {discount.scope === 'products' && discountProducts.length > 0 && discount.discount_type !== 'free_shipping' && (
+                        <div className="mt-2">
+                          <button
+                            onClick={() => toggleProductList(discount.id)}
+                            className="flex items-center justify-between w-full text-xs text-[#23423d]/80 hover:text-[#23423d] transition-colors"
+                          >
+                            <span className="font-medium">
+                              Applies to: {discountProducts.length} product{discountProducts.length !== 1 ? 's' : ''}
+                            </span>
+                            {expandedProductLists.has(discount.id) ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )}
+                          </button>
+                          
+                          {expandedProductLists.has(discount.id) && (
+                            <div className="mt-2 max-h-32 overflow-y-auto border border-[#23423d]/20 rounded-lg bg-white/50">
+                              {discountProducts.map((dp: any, index: number) => (
+                                <div 
+                                  key={dp.id || index} 
+                                  className="flex items-center justify-between px-3 py-2 border-b border-[#23423d]/10 last:border-b-0 text-xs"
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium text-[#23423d] truncate">
+                                      {dp.products?.name || 'Unknown Product'}
+                                    </div>
+                                    <div className="text-[#23423d]/60 text-xs">
+                                      ID: {dp.products?.id || dp.product_id || 'N/A'}
+                                    </div>
+                                  </div>
+                                  <div className="ml-2 flex-shrink-0">
+                                    <Badge variant="outline" className="text-xs bg-[#23423d]/5 border-[#23423d]/30 text-[#23423d]">
+                                      {discount.discount_type === 'percent' ? `${dp.discount_value}%` : `₨${dp.discount_value}`}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {discount.discount_type === 'free_shipping' && (
+                        <div className="text-xs text-[#23423d]/80">
+                          <span className="font-medium">Applies to:</span> All eligible orders
+                          {discount.scope === 'categories' && discountCategories.length > 0 && (
+                            <span className="block mt-1">
+                              <span className="font-medium">Categories:</span> {discountCategories.map((dc: any) => dc.categories?.name).filter(Boolean).join(', ')}
+                            </span>
+                          )}
+                          {discount.scope === 'products' && discountProducts.length > 0 && (
+                            <div className="mt-2">
+                              <button
+                                onClick={() => toggleProductList(discount.id)}
+                                className="flex items-center justify-between w-full text-xs text-[#23423d]/80 hover:text-[#23423d] transition-colors"
+                              >
+                                <span className="font-medium">
+                                  Products: {discountProducts.length} item{discountProducts.length !== 1 ? 's' : ''}
+                                </span>
+                                {expandedProductLists.has(discount.id) ? (
+                                  <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )}
+                              </button>
+                              
+                              {expandedProductLists.has(discount.id) && (
+                                <div className="mt-2 max-h-32 overflow-y-auto border border-[#23423d]/20 rounded-lg bg-white/50">
+                                  {discountProducts.map((dp: any, index: number) => (
+                                    <div 
+                                      key={dp.id || index} 
+                                      className="flex items-center justify-between px-3 py-2 border-b border-[#23423d]/10 last:border-b-0 text-xs"
+                                    >
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-[#23423d] truncate">
+                                          {dp.products?.name || 'Unknown Product'}
+                                        </div>
+                                        <div className="text-[#23423d]/60 text-xs">
+                                          ID: {dp.products?.id || dp.product_id || 'N/A'}
+                                        </div>
+                                      </div>
+                                      <div className="ml-2 flex-shrink-0">
+                                        <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
+                                          Free Shipping
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                       
                       {discount.discount_type === 'coupon' && (() => {
                         const couponInfo = getCouponInfo(discount);
                         return couponInfo ? (
-                          <div className="mt-2 text-xs text-green-700">
-                            <span className="font-medium">Coupon Value:</span> {couponInfo.discountType === 'percent' ? `${couponInfo.discountType}` : 'Fixed Amount'}
+                          <div className="mt-2">
+                            <div className="p-3 bg-white/50 rounded-lg border border-[#23423d]/10 mb-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs font-medium text-[#23423d]">Coupon Code:</p>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copyToClipboard(couponInfo.code)}
+                                  className="h-6 w-6 p-0 text-[#23423d] hover:text-[#23423d]/80 hover:bg-[#23423d]/10"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <Badge variant="outline" className="text-sm font-mono bg-[#23423d]/5 border-[#23423d]/30 text-[#23423d] mb-2 w-full text-center justify-center">
+                                {couponInfo.code}
+                              </Badge>
+                              {couponInfo.usageLimit && (
+                                <div className="mt-2">
+                                  <div className="w-full bg-[#23423d]/20 rounded-full h-2 mb-1">
+                                    <div 
+                                      className="bg-[#23423d] h-2 rounded-full transition-all duration-300" 
+                                      style={{ width: `${(couponInfo.usageCount / couponInfo.usageLimit) * 100}%` }}
+                                    ></div>
+                                  </div>
+                                  <div className="text-xs text-[#23423d]/80 text-center">
+                                    Usage: {couponInfo.usageCount} / {couponInfo.usageLimit} ({Math.round((couponInfo.usageCount / couponInfo.usageLimit) * 100)}%)
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-[#23423d]/80 mb-2">
+                              <span className="font-medium">Coupon Type:</span>
+                              <span>{couponInfo.discountType === 'percent' ? 'Percentage' : 'Fixed Amount'}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-[#23423d]/80">
+                              <span className="font-medium">Coupon Value:</span>
+                              <span className="font-medium">{formatDiscountValue(discount)}</span>
+                            </div>
                           </div>
-                        ) : null;
+                        ) : (
+                          <div className="mt-2 text-xs text-[#23423d]/80">
+                            <span className="font-medium">Type:</span> Coupon
+                          </div>
+                        );
                       })()}
                     </div>
-
-                    {/* Show associated categories/products */}
-                    {discount.scope === 'categories' && discountCategories.length > 0 && (
-                      <div className="p-3 bg-gradient-to-r from-green-50 to-teal-50 rounded-lg border border-green-200">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-medium text-green-800">Categories ({discountCategories.length}):</p>
-                          <Badge className="bg-green-100 text-green-800 border-green-300 text-xs">
-                            <Users className="h-3 w-3 mr-1" />
-                            Category Discount
-                          </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          {discountCategories.slice(0, 3).map((dc: any) => (
-                            <div key={dc.id} className="flex items-center justify-between p-2 bg-white rounded border border-green-100">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 border-green-200">
-                                  {dc.categories?.name}
-                                </Badge>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-sm font-semibold text-green-700">
-                                  {discount.discount_type === 'percent' ? `${dc.discount_value}%` : `₨${dc.discount_value}`}
-                                </span>
-                                <p className="text-xs text-green-600">off</p>
-                              </div>
-                            </div>
-                          ))}
-                          {discountCategories.length > 3 && (
-                            <div className="text-center">
-                              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700">
-                                +{discountCategories.length - 3} more categories
-                              </Badge>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {discount.scope === 'products' && discountProducts.length > 0 && (
-                      <div className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-medium text-purple-800">Products ({discountProducts.length}):</p>
-                          <Badge className="bg-purple-100 text-purple-800 border-purple-300 text-xs">
-                            <Package className="h-3 w-3 mr-1" />
-                            Product Discount
-                          </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          {discountProducts.slice(0, 3).map((dp: any) => (
-                            <div key={dp.id} className="flex items-center justify-between p-2 bg-white rounded border border-purple-100">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700 border-purple-200">
-                                  {dp.products?.name}
-                                </Badge>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-sm font-semibold text-purple-700">
-                                  {discount.discount_type === 'percent' ? `${dp.discount_value}%` : `₨${dp.discount_value}`}
-                                </span>
-                                <p className="text-xs text-purple-600">off</p>
-                              </div>
-                            </div>
-                          ))}
-                          {discountProducts.length > 3 && (
-                            <div className="text-center">
-                              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700">
-                                +{discountProducts.length - 3} more products
-                              </Badge>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex justify-end items-center pt-4 border-t border-gray-100">
@@ -662,22 +742,6 @@ export function DiscountsTab({ onAddDiscount, onEditDiscount }: DiscountsTabProp
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
-                      {discount.discount_type === 'coupon' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            const couponInfo = getCouponInfo(discount);
-                            if (couponInfo) {
-                              copyToClipboard(couponInfo.code);
-                            }
-                          }}
-                          disabled={loading}
-                          className="text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </CardContent>

@@ -114,13 +114,50 @@ export function useDiscounts() {
   async function fetchProducts() {
     const { data, error } = await supabase
       .from("products")
-      .select("*")
+      .select(`
+        *,
+        categories (
+          id,
+          name
+        ),
+        product_images (
+          id,
+          polish_color_id,
+          image_url,
+          is_primary,
+          polish_colors (
+            id,
+            name,
+            hex_code
+          )
+        )
+      `)
       .order("name");
 
     if (error) {
       console.error("Error fetching products:", error);
     } else {
-      setProducts(data || []);
+      // Transform data to include public URLs for images
+      const transformedProducts = data?.map((product) => {
+        // Get public URLs for images
+        const transformedImages = product.product_images?.map((img: any) => {
+          const { data: urlData } = supabase.storage
+            .from("product-images")
+            .getPublicUrl(img.image_url);
+          
+          return {
+            ...img,
+            public_url: urlData?.publicUrl || img.image_url
+          };
+        }) || [];
+
+        return {
+          ...product,
+          product_images: transformedImages
+        };
+      }) || [];
+
+      setProducts(transformedProducts);
     }
   }
 
@@ -271,7 +308,6 @@ export function useDiscounts() {
 
       await fetchDiscounts();
       resetForm();
-      alert("Discount added successfully!");
     } catch (error) {
       console.error("Error adding discount:", error);
       alert("Error adding discount");
@@ -418,7 +454,6 @@ export function useDiscounts() {
       await fetchDiscounts();
       resetForm();
       setEditingDiscount(null);
-      alert("Discount updated successfully!");
     } catch (error) {
       console.error("Error updating discount:", error);
       alert("Error updating discount");
@@ -441,7 +476,6 @@ export function useDiscounts() {
         alert("Error deleting discount: " + error.message);
       } else {
         await fetchDiscounts();
-        alert("Discount deleted successfully!");
       }
     } catch (error) {
       console.error("Error deleting discount:", error);
@@ -502,12 +536,30 @@ export function useDiscounts() {
       discountValue = allItemsData.discount_value;
     }
     // Check for coupon data
-    else if ((discount as any).discount_coupons?.length > 0) {
-      discountValue = (discount as any).discount_coupons[0].discount_value;
+    const couponDataRaw = (discount as any).discount_coupons;
+    let couponData = null;
+    
+    // Check if coupon data is an array
+    if (Array.isArray(couponDataRaw) && couponDataRaw.length > 0) {
+      couponData = couponDataRaw[0];
+      if (!discountValue) {
+        discountValue = couponData.discount_value;
+      }
     }
-
-    // Get coupon data
-    const couponData = (discount as any).discount_coupons?.[0];
+    // Check if coupon data is a single object
+    else if (couponDataRaw && typeof couponDataRaw === 'object') {
+      couponData = couponDataRaw;
+      if (!discountValue) {
+        discountValue = couponData.discount_value;
+      }
+    }
+    // Legacy check for array format
+    else if ((discount as any).discount_coupons?.length > 0) {
+      couponData = (discount as any).discount_coupons[0];
+      if (!discountValue) {
+        discountValue = couponData.discount_value;
+      }
+    }
 
     setFormData({
       name: discount.name,

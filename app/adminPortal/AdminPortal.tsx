@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { BarChart3, Package, Settings, Menu, X, Tag, Palette, Percent } from "lucide-react";
+import { BarChart3, Package, Settings, Tag, Palette, Percent, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { useProducts } from "./hooks/useProducts";
@@ -501,16 +501,13 @@ export function AdminPortal({
                   formData={discountFormData}
                   updateFormData={updateDiscountFormData}
                   onSubmit={async (e: React.FormEvent) => {
-                    try {
-                      if (editingDiscount) {
-                        await updateDiscount(e);
-                      } else {
-                        await addDiscount(e);
-                      }
-                      handleDiscountSaved();
-                    } catch (error) {
-                      console.error("Failed to save discount:", error);
+                    if (editingDiscount) {
+                      await updateDiscount(e);
+                    } else {
+                      await addDiscount(e);
                     }
+                    // Close form after successful operation
+                    handleDiscountSaved();
                   }}
                   onCancel={handleCancelEditDiscount}
                   loading={discountsLoading}
